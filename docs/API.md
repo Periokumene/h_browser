@@ -118,6 +118,7 @@
 | title | string \| null | 标题（来自 NFO） |
 | video_type | string \| null | 视频扩展名，如 mp4、ts |
 | has_video | boolean | 是否存在对应视频文件 |
+| poster_url | string | 海报图路径，可拼 base URL 与 `?token=` 请求图片 |
 
 **响应示例（200）**
 
@@ -162,6 +163,8 @@
   - `description`: string \| null，NFO 中的 plot  
   - `video_type`: string \| null  
   - `has_video`: boolean  
+  - `poster_url`: string，海报图路径  
+  - `metadata`: object \| undefined，来自 NFO 的扩展元数据（存在时）：`rating`、`year`、`actors`、`genres`、`outline` 等  
 
 **响应示例（200）**
 
@@ -171,9 +174,25 @@
   "title": "示例标题",
   "description": "剧情简介...",
   "video_type": "mp4",
-  "has_video": true
+  "has_video": true,
+  "poster_url": "/api/items/movie/poster",
+  "metadata": {
+    "rating": 7.5,
+    "year": 2020,
+    "actors": [{"name": "演员名", "role": "角色", "thumb": null}],
+    "genres": ["剧情"],
+    "outline": "简短概述"
+  }
 }
 ```
+
+---
+
+### 5. 海报图
+
+**GET** `/api/items/<code>/poster`
+
+需要认证。支持 Query 参数 `token`（与视频流一致，便于 `<img src="...?token=">` 使用）。返回该条目的海报图片；若无 NFO 或未找到海报文件则 404。
 
 - **404**：未找到该番号  
   - `error`: string  
@@ -183,7 +202,7 @@
 
 ---
 
-### 5. 触发扫描
+### 6. 触发扫描
 
 **POST** `/api/scan`
 
@@ -211,7 +230,7 @@
 
 ---
 
-### 6. 视频流
+### 7. 视频流
 
 **GET** `/api/stream/<code>`
 
@@ -243,7 +262,7 @@
 
 ---
 
-### 7. HLS 播放列表（仅 TS）
+### 8. HLS 播放列表（仅 TS）
 
 **GET** `/api/stream/<code>/playlist.m3u8`
 

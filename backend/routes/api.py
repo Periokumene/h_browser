@@ -20,6 +20,7 @@ from flask import Blueprint, Response, jsonify, request, send_file
 from ..config import config
 from ..models import MediaItem, Session as SessionModel, get_session
 from ..scanner import scan_media
+from ..services.metadata import get_poster_path, parse_nfo
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -175,6 +176,7 @@ def list_items():
                         "title": item.title,
                         "video_type": item.video_type,
                         "has_video": bool(item.video_path),
+                        "poster_url": f"/api/items/{item.code}/poster",
                     }
                     for item in items
                 ],
@@ -194,15 +196,61 @@ def get_item(code: str):
         if item is None:
             return jsonify({"error": "未找到媒体条目"}), 404
 
-        return jsonify(
-            {
-                "code": item.code,
-                "title": item.title,
-                "description": item.description,
-                "video_type": item.video_type,
-                "has_video": bool(item.video_path),
+        nfo_path = Path(item.nfo_path) if item.nfo_path else None
+        metadata = None
+        if nfo_path and nfo_path.exists():
+            metadata = parse_nfo(nfo_path)
+        payload = {
+            "code": item.code,
+            "title": item.title,
+            "description": item.description,
+            "video_type": item.video_type,
+            "has_video": bool(item.video_path),
+            "poster_url": "/api/items/" + item.code + "/poster",
+        }
+        if metadata:
+            payload["metadata"] = {
+                "rating": metadata.rating,
+                "userrating": metadata.userrating,
+                "votes": metadata.votes,
+                "year": metadata.year,
+                "premiered": metadata.premiered,
+                "runtime": metadata.runtime,
+                "genres": metadata.genres,
+                "tags": metadata.tags,
+                "country": metadata.country,
+                "director": metadata.director,
+                "studio": metadata.studio,
+                "actors": [{"name": a.name, "role": a.role, "thumb": a.thumb} for a in metadata.actors],
+                "outline": metadata.outline,
             }
-        )
+        return jsonify(payload)
+    finally:
+        db.close()
+
+
+@api_bp.route("/items/<string:code>/poster", methods=["GET"])
+def get_item_poster(code: str) -> Response:
+    """根据番号返回该条目的海报图。支持 query 参数 token（供 <img> 无法带 Header 的场景）。若无海报文件则 404。"""
+    token = _get_token_from_request(allow_query=True)
+    if not _validate_token(token):
+        return jsonify({"error": "未提供令牌或令牌无效"}), 401
+    db = get_session()
+    try:
+        item = db.query(MediaItem).filter(MediaItem.code == code).one_or_none()
+        if item is None:
+            return jsonify({"error": "未找到媒体条目"}), 404
+        nfo_path = Path(item.nfo_path) if item.nfo_path else None
+        if not nfo_path or not nfo_path.exists():
+            return jsonify({"error": "无 NFO 或文件不存在"}), 404
+        metadata = parse_nfo(nfo_path)
+        poster_path = get_poster_path(nfo_path, code, metadata)
+        if poster_path is None or not poster_path.exists():
+            return jsonify({"error": "未找到海报图"}), 404
+        suffix = poster_path.suffix.lower()
+        mimetypes = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
+        mimetype = mimetypes.get(suffix, "image/jpeg")
+        return send_file(str(poster_path), mimetype=mimetype, max_age=86400)
     finally:
         db.close()
 

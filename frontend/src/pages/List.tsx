@@ -4,6 +4,7 @@ import {
   Button,
   Flex,
   Heading,
+  Image,
   Input,
   SimpleGrid,
   Spinner,
@@ -15,11 +16,16 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 
+const getBaseUrl = () =>
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const getToken = () => localStorage.getItem("authToken");
+
 interface MediaItem {
   code: string;
   title?: string;
   video_type?: string;
   has_video: boolean;
+  poster_url?: string;
 }
 
 export default function ListPage() {
@@ -106,35 +112,69 @@ export default function ListPage() {
         </Flex>
       ) : (
         <>
-          <SimpleGrid minChildWidth="220px" spacing={4}>
-            {items.map((item) => (
-              <Box
-                key={item.code}
-                p={4}
-                borderWidth="1px"
-                borderRadius="md"
-                cursor="pointer"
-                _hover={{ shadow: "md" }}
-                onClick={() => navigate(`/detail/${encodeURIComponent(item.code)}`)}
-              >
-                <Heading size="sm" mb={2} noOfLines={2}>
-                  {item.title || item.code}
-                </Heading>
-                <Text fontSize="xs" color="gray.400">
-                  番号：{item.code}
-                </Text>
-                <Flex mt={2} gap={2} align="center">
-                  {item.has_video ? (
-                    <Badge colorScheme="green">有视频</Badge>
-                  ) : (
-                    <Badge colorScheme="red">无视频</Badge>
-                  )}
-                  {item.video_type && (
-                    <Badge variant="outline">{item.video_type}</Badge>
-                  )}
-                </Flex>
-              </Box>
-            ))}
+          <SimpleGrid minChildWidth="200px" spacing={4}>
+            {items.map((item) => {
+              const token = getToken();
+              const posterUrl = item.poster_url
+                ? `${getBaseUrl()}${item.poster_url}${token ? `?token=${encodeURIComponent(token)}` : ""}`
+                : undefined;
+              return (
+                <Box
+                  key={item.code}
+                  borderWidth="1px"
+                  borderRadius="md"
+                  overflow="hidden"
+                  cursor="pointer"
+                  _hover={{ shadow: "md" }}
+                  onClick={() => navigate(`/detail/${encodeURIComponent(item.code)}`)}
+                  bg="gray.800"
+                >
+                  <Box aspectRatio="2/3" bg="gray.700" position="relative">
+                    {posterUrl ? (
+                      <Image
+                        src={posterUrl}
+                        alt={item.title || item.code}
+                        objectFit="cover"
+                        w="100%"
+                        h="100%"
+                        fallbackSrc=""
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <Flex
+                        h="100%"
+                        align="center"
+                        justify="center"
+                        color="gray.500"
+                        fontSize="sm"
+                      >
+                        无海报
+                      </Flex>
+                    )}
+                  </Box>
+                  <Box p={3}>
+                    <Heading size="sm" noOfLines={2} mb={1}>
+                      {item.title || item.code}
+                    </Heading>
+                    <Text fontSize="xs" color="gray.400" noOfLines={1}>
+                      {item.code}
+                    </Text>
+                    <Flex mt={2} gap={2} align="center" flexWrap="wrap">
+                      {item.has_video ? (
+                        <Badge colorScheme="green" size="sm">有视频</Badge>
+                      ) : (
+                        <Badge colorScheme="red" size="sm">无视频</Badge>
+                      )}
+                      {item.video_type && (
+                        <Badge variant="outline" size="sm">{item.video_type}</Badge>
+                      )}
+                    </Flex>
+                  </Box>
+                </Box>
+              );
+            })}
           </SimpleGrid>
           <Flex align="center" justify="space-between" pt={2}>
             <Text fontSize="sm" color="gray.500">
