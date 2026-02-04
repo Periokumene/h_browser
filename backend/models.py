@@ -16,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     create_engine,
     func,
@@ -44,6 +45,52 @@ class TimestampMixin:
     )
 
 
+# 多对多关联表
+media_item_genres = Table(
+    "media_item_genres",
+    Base.metadata,
+    Column("media_item_id", Integer, ForeignKey("media_items.id"), primary_key=True),
+    Column("genre_id", Integer, ForeignKey("genres.id"), primary_key=True),
+)
+
+media_item_tags = Table(
+    "media_item_tags",
+    Base.metadata,
+    Column("media_item_id", Integer, ForeignKey("media_items.id"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id"), primary_key=True),
+)
+
+
+class Genre(Base):
+    """类型（Genre）：用于高级筛选。"""
+
+    __tablename__ = "genres"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), unique=True, index=True, nullable=False)
+
+    items = relationship(
+        "MediaItem",
+        secondary=media_item_genres,
+        back_populates="genres",
+    )
+
+
+class Tag(Base):
+    """标签（Tag）：用于高级筛选。"""
+
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), unique=True, index=True, nullable=False)
+
+    items = relationship(
+        "MediaItem",
+        secondary=media_item_tags,
+        back_populates="tags",
+    )
+
+
 class MediaItem(Base, TimestampMixin):
     """媒体条目：以番号（code）为业务主键，对应一个 .nfo 及同目录下的 .mp4/.ts。"""
 
@@ -62,6 +109,17 @@ class MediaItem(Base, TimestampMixin):
     file_size = Column(Integer, nullable=True)
     file_mtime = Column(DateTime(timezone=True), nullable=True)
     last_scanned_at = Column(DateTime(timezone=True), nullable=True)
+
+    genres = relationship(
+        "Genre",
+        secondary=media_item_genres,
+        back_populates="items",
+    )
+    tags = relationship(
+        "Tag",
+        secondary=media_item_tags,
+        back_populates="items",
+    )
 
 
 class User(Base, TimestampMixin):

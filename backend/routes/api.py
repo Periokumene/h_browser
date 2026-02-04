@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
@@ -16,9 +17,10 @@ from typing import Any, Callable, Optional
 from urllib.parse import quote
 
 from flask import Blueprint, Response, jsonify, request, send_file
+from sqlalchemy import and_, exists
 
 from ..config import config
-from ..models import MediaItem, Session as SessionModel, get_session
+from ..models import Genre, MediaItem, Session as SessionModel, Tag, get_session, media_item_genres, media_item_tags
 from ..scanner import scan_media
 from ..services.metadata import get_poster_path, parse_nfo
 
@@ -140,17 +142,83 @@ def login_required(fn: Callable):
     return wrapper
 
 
+@api_bp.route("/filters", methods=["GET"])
+@login_required
+def get_filters():
+    """返回高级筛选可选值：从数据库查询所有 genre 与 tag。"""
+    db = get_session()
+    try:
+        genres = [g.name for g in db.query(Genre).order_by(Genre.name).all()]
+        tags = [t.name for t in db.query(Tag).order_by(Tag.name).all()]
+        return jsonify({
+            "genres": genres,
+            "tags": tags,
+        })
+    finally:
+        db.close()
+
+
 @api_bp.route("/items", methods=["GET"])
 @login_required
 def list_items():
-    """分页返回媒体列表，支持 q 参数按番号/标题模糊搜索。"""
+    """分页返回媒体列表，支持 q 按番号/标题搜索，genre/tag 多选过滤。"""
     page = max(int(request.args.get("page", 1)), 1)
     page_size = min(max(int(request.args.get("page_size", 20)), 1), 100)
     search = (request.args.get("q") or "").strip()
+    genres = request.args.getlist("genre") or request.args.getlist("genres") or []
+    tags = request.args.getlist("tag") or request.args.getlist("tags") or []
+    genres = [g.strip() for g in genres if g and g.strip()]
+    tags = [t.strip() for t in tags if t and t.strip()]
 
     db = get_session()
     try:
         query = db.query(MediaItem)
+
+        # 按 genre/tag 过滤（使用 exists 子查询确保 AND 关系）
+        if genres:
+            genre_objs = db.query(Genre).filter(Genre.name.in_(genres)).all()
+            if not genre_objs:
+                return jsonify(
+                    {
+                        "page": page,
+                        "page_size": page_size,
+                        "total": 0,
+                        "items": [],
+                    }
+                )
+            # 需要至少包含一个选中的 genre（OR 关系）
+            genre_ids = [g.id for g in genre_objs]
+            query = query.filter(
+                exists().where(
+                    and_(
+                        media_item_genres.c.media_item_id == MediaItem.id,
+                        media_item_genres.c.genre_id.in_(genre_ids),
+                    )
+                )
+            )
+
+        if tags:
+            tag_objs = db.query(Tag).filter(Tag.name.in_(tags)).all()
+            if not tag_objs:
+                return jsonify(
+                    {
+                        "page": page,
+                        "page_size": page_size,
+                        "total": 0,
+                        "items": [],
+                    }
+                )
+            # 需要至少包含一个选中的 tag（OR 关系），且与 genre 是 AND 关系
+            tag_ids = [t.id for t in tag_objs]
+            query = query.filter(
+                exists().where(
+                    and_(
+                        media_item_tags.c.media_item_id == MediaItem.id,
+                        media_item_tags.c.tag_id.in_(tag_ids),
+                    )
+                )
+            )
+
         if search:
             like = f"%{search}%"
             query = query.filter(
@@ -259,10 +327,14 @@ def get_item_poster(code: str) -> Response:
 @login_required
 def trigger_scan():
     """手动触发一次全量媒体扫描（config.MEDIA_ROOT），返回本次处理的条目数。"""
+    logger = logging.getLogger(__name__)
     db = get_session()
     try:
         count = scan_media(db, media_root=config.MEDIA_ROOT)
         return jsonify({"processed": count})
+    except Exception as exc:
+        logger.exception("扫描失败")
+        return jsonify({"error": f"扫描失败: {str(exc)}"}), 500
     finally:
         db.close()
 

@@ -2,10 +2,14 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Flex,
   Heading,
   Image,
   Input,
+  Menu,
+  MenuButton,
+  MenuList,
   SimpleGrid,
   Spinner,
   Stack,
@@ -22,12 +26,31 @@ const getToken = () => localStorage.getItem("authToken");
 
 const PAGE_SIZE = 24;
 
+/** 将 params 中数组序列化为重复 key（genre=a&genre=b）供后端 getlist 使用 */
+function serializeParams(params: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null) continue;
+    if (Array.isArray(v)) {
+      v.forEach((vv) => parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(vv))}`));
+    } else {
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+    }
+  }
+  return parts.join("&");
+}
+
 interface MediaItem {
   code: string;
   title?: string;
   video_type?: string;
   has_video: boolean;
   poster_url?: string;
+}
+
+interface FilterOptions {
+  genres: string[];
+  tags: string[];
 }
 
 export default function VideoLibPage() {
@@ -38,21 +61,34 @@ export default function VideoLibPage() {
   const [nextPage, setNextPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ genres: [], tags: [] });
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
 
   const loadPage = useCallback(
-    async (pageNumber: number, keyword: string, append: boolean) => {
+    async (
+      pageNumber: number,
+      keyword: string,
+      append: boolean,
+      genres: string[],
+      tags: string[]
+    ) => {
       if (append) setLoadingMore(true);
       else setLoading(true);
       try {
+        const params: Record<string, unknown> = {
+          page: pageNumber,
+          page_size: PAGE_SIZE,
+          q: keyword || undefined,
+          ...(genres.length ? { genre: genres } : {}),
+          ...(tags.length ? { tag: tags } : {}),
+        };
         const res = await apiClient.get("/api/items", {
-          params: {
-            page: pageNumber,
-            page_size: PAGE_SIZE,
-            q: keyword || undefined
-          }
+          params,
+          paramsSerializer: (p: Record<string, unknown>) => serializeParams(p),
         });
         const list = res.data.items as MediaItem[];
         const totalCount = res.data.total as number;
@@ -79,22 +115,27 @@ export default function VideoLibPage() {
     [toast]
   );
 
-  // 初始加载与搜索：从第一页开始，不追加
   const loadInitial = useCallback(() => {
     setNextPage(1);
     setHasMore(true);
-    loadPage(1, search, false);
-  }, [search, loadPage]);
+    loadPage(1, search, false, selectedGenres, selectedTags);
+  }, [search, selectedGenres, selectedTags, loadPage]);
 
   useEffect(() => {
     loadInitial();
   }, []);
 
-  // 加载更多（下一页）
   const loadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
-    loadPage(nextPage, search, true);
-  }, [loading, loadingMore, hasMore, nextPage, search, loadPage]);
+    loadPage(nextPage, search, true, selectedGenres, selectedTags);
+  }, [loading, loadingMore, hasMore, nextPage, search, selectedGenres, selectedTags, loadPage]);
+
+  useEffect(() => {
+    apiClient
+      .get<{ genres: string[]; tags: string[] }>("/api/filters")
+      .then((res) => setFilterOptions({ genres: res.data.genres || [], tags: res.data.tags || [] }))
+      .catch(() => {});
+  }, []);
 
   // 滚动到底部时加载更多
   useEffect(() => {
@@ -118,6 +159,8 @@ export default function VideoLibPage() {
         description: `本次处理 ${res.data.processed} 条记录`,
         status: "success"
       });
+      const filterRes = await apiClient.get<{ genres: string[]; tags: string[] }>("/api/filters");
+      setFilterOptions({ genres: filterRes.data.genres || [], tags: filterRes.data.tags || [] });
       loadInitial();
     } catch (err: any) {
       const msg = err?.response?.data?.error || "触发扫描失败";
@@ -125,14 +168,102 @@ export default function VideoLibPage() {
     }
   };
 
+  const toggleGenre = (g: string) => {
+    setSelectedGenres((prev) =>
+      prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]
+    );
+  };
+  const toggleTag = (t: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+    );
+  };
+  const applyFilters = () => {
+    setNextPage(1);
+    setHasMore(true);
+    loadPage(1, search, false, selectedGenres, selectedTags);
+  };
+  const clearFilters = () => {
+    setSelectedGenres([]);
+    setSelectedTags([]);
+    setNextPage(1);
+    setHasMore(true);
+    loadPage(1, search, false, [], []);
+  };
+  const hasActiveFilters = selectedGenres.length > 0 || selectedTags.length > 0;
+
   return (
     <Stack spacing={4}>
-      <Flex align="center" gap={4}>
-        <Heading size="md">媒体列表</Heading>
+      <Flex align="center" gap={4} flexWrap="wrap">
         <Button size="sm" onClick={handleScan}>
           刷新库（扫描）
         </Button>
         <Box flex="1" />
+
+        {/* 类型 / 标签 筛选（Jellyfin 风格） */}
+        <Flex align="center" gap={2} flexWrap="wrap">
+          <Menu closeOnSelect={false}>
+            <MenuButton as={Button} size="sm" variant="outline" rightIcon={null}>
+              类型 {selectedGenres.length ? `(${selectedGenres.length})` : ""}
+            </MenuButton>
+            <MenuList maxH="280px" overflowY="auto">
+              {filterOptions.genres.length === 0 ? (
+                <Box px={3} py={2} color="gray.500" fontSize="sm">
+                  暂无类型（请先扫描）
+                </Box>
+              ) : (
+                filterOptions.genres.map((g) => (
+                  <Checkbox
+                    key={g}
+                    isChecked={selectedGenres.includes(g)}
+                    onChange={() => toggleGenre(g)}
+                    px={3}
+                    py={2}
+                    w="100%"
+                    sx={{ ".chakra-checkbox__label": { w: "100%" } }}
+                  >
+                    {g}
+                  </Checkbox>
+                ))
+              )}
+            </MenuList>
+          </Menu>
+          <Menu closeOnSelect={false}>
+            <MenuButton as={Button} size="sm" variant="outline" rightIcon={null}>
+              标签 {selectedTags.length ? `(${selectedTags.length})` : ""}
+            </MenuButton>
+            <MenuList maxH="280px" overflowY="auto">
+              {filterOptions.tags.length === 0 ? (
+                <Box px={3} py={2} color="gray.500" fontSize="sm">
+                  暂无标签（请先扫描）
+                </Box>
+              ) : (
+                filterOptions.tags.map((t) => (
+                  <Checkbox
+                    key={t}
+                    isChecked={selectedTags.includes(t)}
+                    onChange={() => toggleTag(t)}
+                    px={3}
+                    py={2}
+                    w="100%"
+                    sx={{ ".chakra-checkbox__label": { w: "100%" } }}
+                  >
+                    {t}
+                  </Checkbox>
+                ))
+              )}
+            </MenuList>
+          </Menu>
+          <Button size="sm" variant="outline" onClick={applyFilters}>
+            应用筛选
+          </Button>
+          {hasActiveFilters && (
+            <Button size="sm" variant="ghost" onClick={clearFilters}>
+              清除筛选
+            </Button>
+          )}
+        </Flex>
+
         <Input
           placeholder="按番号或标题搜索"
           value={search}

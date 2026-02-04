@@ -14,7 +14,8 @@ import logging
 import xml.etree.ElementTree as ET
 
 from .config import config
-from .models import MediaItem
+from .models import Genre, MediaItem, Tag
+from .services.metadata import parse_nfo
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,26 @@ def _find_video_for_code(dir_path: Path, code: str) -> Optional[Path]:
         if candidate.exists():
             return candidate
     return None
+
+
+def _get_or_create_genre(session, name: str) -> Genre:
+    """获取或创建 Genre 对象。"""
+    genre = session.query(Genre).filter(Genre.name == name).first()
+    if genre is None:
+        genre = Genre(name=name)
+        session.add(genre)
+        session.flush()  # 获取 ID
+    return genre
+
+
+def _get_or_create_tag(session, name: str) -> Tag:
+    """获取或创建 Tag 对象。"""
+    tag = session.query(Tag).filter(Tag.name == name).first()
+    if tag is None:
+        tag = Tag(name=name)
+        session.add(tag)
+        session.flush()  # 获取 ID
+    return tag
 
 
 def scan_media(session, media_root: Optional[Path] = None) -> int:
@@ -123,6 +144,7 @@ def scan_media(session, media_root: Optional[Path] = None) -> int:
             if item is None:
                 item = MediaItem(code=code)
                 session.add(item)
+                session.flush()  # 确保新 item 有 ID，才能操作关联关系
 
             item.nfo_path = str(nfo_path)
             item.video_path = str(video_path) if video_path is not None else None
@@ -137,6 +159,28 @@ def scan_media(session, media_root: Optional[Path] = None) -> int:
                 item.title = title
             if description:
                 item.description = description
+
+            # 解析并更新 genre/tag 关联关系
+            try:
+                metadata = parse_nfo(nfo_path)
+                if metadata:
+                    # 清空现有关联，重新设置（需要 item 有 ID）
+                    item.genres.clear()
+                    item.tags.clear()
+
+                    # 添加 genres
+                    for genre_name in metadata.genres or []:
+                        if genre_name and genre_name.strip():
+                            genre = _get_or_create_genre(session, genre_name.strip())
+                            item.genres.append(genre)
+
+                    # 添加 tags
+                    for tag_name in metadata.tags or []:
+                        if tag_name and tag_name.strip():
+                            tag = _get_or_create_tag(session, tag_name.strip())
+                            item.tags.append(tag)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("解析 NFO 元数据用于筛选失败 %s: %s", nfo_path, exc)
 
             processed += 1
 
