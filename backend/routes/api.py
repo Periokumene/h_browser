@@ -13,6 +13,8 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from urllib.parse import quote
+
 from flask import Blueprint, Response, jsonify, request, send_file
 
 from ..config import config
@@ -272,7 +274,8 @@ def stream_video(code: str) -> Response:
 
 @api_bp.route("/stream/<string:code>/playlist.m3u8", methods=["GET"])
 def stream_playlist_m3u8(code: str) -> Response:
-    """返回 HLS 单段 m3u8 播放列表，供 hls.js 等播放 TS（浏览器多不原生支持 video/mp2t）。"""
+    """返回 HLS 按字节分片的 m3u8（#EXT-X-BYTERANGE），供 hls.js 播放 .ts。
+    首段仅需加载 HLS_SEGMENT_BYTES 即可起播，拖拽时按 range 请求对应段，实现快速启动与灵活 seek。"""
     token = _get_token_from_request(allow_query=True)
     if not _validate_token(token):
         return jsonify({"error": "未提供令牌或令牌无效"}), 401
@@ -285,20 +288,47 @@ def stream_playlist_m3u8(code: str) -> Response:
         if not (item.video_path or "").lower().endswith(".ts"):
             return jsonify({"error": "仅支持 TS 的 HLS 播放列表"}), 400
 
+        file_path = _resolve_video_path(item.video_path)
+        if file_path is None:
+            return jsonify({"error": "对应视频文件无法访问"}), 404
+
+        size = file_path.stat().st_size
+        # MPEG-TS 包固定 188 字节，分片必须在包边界对齐，否则会出现 "do not start with 0x47" 解析错误
+        TS_PACKET_SIZE = 188
+        segment_bytes = getattr(config, "HLS_SEGMENT_BYTES", 2 * 1024 * 1024)
+        segment_bytes = (segment_bytes // TS_PACKET_SIZE) * TS_PACKET_SIZE
+        if segment_bytes < TS_PACKET_SIZE:
+            segment_bytes = TS_PACKET_SIZE
+
         base_url = request.host_url.rstrip("/")
-        segment_url = f"{base_url}/api/stream/{code}?token={token}"
-        body = (
-            "#EXTM3U\n"
-            "#EXT-X-VERSION:3\n"
-            "#EXT-X-TARGETDURATION:9999\n"
-            "#EXTINF:9999.0,\n"
-            f"{segment_url}\n"
-            "#EXT-X-ENDLIST\n"
-        )
+        segment_url = f"{base_url}/api/stream/{code}?token={quote(token or '', safe='')}"
+
+        lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:4",
+            "#EXT-X-TARGETDURATION:5",
+        ]
+        offset = 0
+        while offset < size:
+            remaining = size - offset
+            chunk = min(segment_bytes, remaining)
+            chunk = (chunk // TS_PACKET_SIZE) * TS_PACKET_SIZE  # 不截断到包中间
+            if chunk == 0:
+                break
+            lines.append("#EXTINF:4.0,")
+            lines.append("#EXT-X-BYTERANGE:%d@%d" % (chunk, offset))
+            lines.append(segment_url)
+            offset += chunk
+        lines.append("#EXT-X-ENDLIST")
+        body = "\n".join(lines) + "\n"
+
         return Response(
             body,
             mimetype="application/vnd.apple.mpegurl",
-            headers={"Content-Type": "application/vnd.apple.mpegurl; charset=utf-8"},
+            headers={
+                "Content-Type": "application/vnd.apple.mpegurl; charset=utf-8",
+                "Cache-Control": "no-cache",
+            },
         )
     finally:
         db.close()

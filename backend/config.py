@@ -29,5 +29,8 @@ class Config:
     # 是否在应用启动时自动执行一次媒体扫描（"1" 为是）
     SCAN_ON_STARTUP: bool = os.getenv("SCAN_ON_STARTUP", "1") == "1"
 
+    # HLS 播放 .ts 时，m3u8 中每段字节数（默认 2MB）。首段加载完即可起播，便于快速启动与灵活 seek
+    HLS_SEGMENT_BYTES: int = int(os.getenv("HLS_SEGMENT_BYTES", str(2 * 1024 * 1024)))
+
 
 config = Config()

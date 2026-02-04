@@ -247,11 +247,14 @@
 
 **GET** `/api/stream/<code>/playlist.m3u8`
 
-需要认证。仅当该番号对应视频为 **.ts** 时使用。返回单段 m3u8，供前端 **hls.js** 等播放（浏览器多不原生支持 `video/mp2t`）。认证方式同视频流，支持 query 参数 `token`。
+需要认证。仅当该番号对应视频为 **.ts** 时使用。返回按字节分片的 m3u8（`#EXT-X-BYTERANGE`），供前端 **hls.js** 等播放（浏览器多不原生支持 `video/mp2t`）。认证方式同视频流，支持 query 参数 `token`。
+
+- 播放列表将整文件按 **HLS_SEGMENT_BYTES**（默认 2MB）切为多段，每段通过同一 `GET /api/stream/<code>?token=...` 的 **Range** 请求获取，首段加载完即可起播，拖拽时按需请求对应段，实现快速启动与灵活 seek。
+- 可通过环境变量 `HLS_SEGMENT_BYTES` 调整每段字节数。
 
 **路径参数**：`code` — 媒体番号。
 
-**响应**：200，`Content-Type: application/vnd.apple.mpegurl`，Body 为 m3u8 文本，其中段地址指向 `GET /api/stream/<code>?token=...`。  
+**响应**：200，`Content-Type: application/vnd.apple.mpegurl`，Body 为 m3u8 文本（含多段 `#EXT-X-BYTERANGE`，段地址指向 `GET /api/stream/<code>?token=...`）。  
 400：该番号不是 TS。401/404：同视频流。
 
 ---

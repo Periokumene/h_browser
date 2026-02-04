@@ -74,14 +74,26 @@ export default function PlayPage() {
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
-          lowLatencyMode: true,
+          lowLatencyMode: false,
+          fragLoadingMaxRetry: 3,
+          manifestLoadingMaxRetry: 2,
+          xhrSetup: (xhr) => {
+            xhr.withCredentials = true;
+          },
         });
         hlsRef.current = hls;
         hls.loadSource(url);
         hls.attachMedia(video);
-        hls.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean }) => {
+        hls.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string; details?: string; response?: { code?: number } }) => {
           if (data.fatal) {
-            toast({ title: "HLS 加载失败", status: "error" });
+            const detail = [data.type, data.details, data.response?.code != null ? `HTTP ${data.response.code}` : ""].filter(Boolean).join(" ");
+            console.error("HLS fatal error:", data);
+            toast({
+              title: "HLS 加载失败",
+              description: detail || undefined,
+              status: "error",
+              duration: 8000,
+            });
           }
         });
         return () => {
