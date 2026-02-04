@@ -1,0 +1,163 @@
+/**
+ * 播放器布局覆盖：固定容器 + Fill 模式 + object-fit: contain，确保宽高均不超出。
+ *
+ * 1) 包裹层：建立完整高度链，使 .video-js 的 100% 有可解析的父级高度。
+ * 2) .video-js：填满包裹层并 overflow:hidden，防止任何子元素溢出。
+ * 3) .vjs-tech：填满 .video-js，object-fit:contain 使画面等比缩放且不超出。
+ */
+
+/* 播放器挂载容器：填满父级，建立 100% 高度链（父级由 Play 页 h=100vh + 内层 h=100% 提供） */
+.vjs-player-wrapper,
+.vjs-player-wrapper .vjs-player-container {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Fill 模式下 .video-js 已是 100%×100%，此处约束不溢出并裁剪溢出 */
+.video-js.vjs-fill {
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+/* 视频层：填满播放器框，画面等比缩放且宽高都不超出（contain = 选合适缩放使两边都不超） */
+.video-js .vjs-tech {
+  width: 100%;
+  height: 100%;
+}
+
+/* =========================
+ * NewVideoLib 自定义主题（配色尽量贴合整体 UI）
+ * 仅调整颜色 / 边框 / 阴影，不改变高度、布局与内边距，避免破坏插件布局。
+ * ========================= */
+
+.vjs-theme-newvideolib.video-js {
+  color: #e5e7eb; /* 文本默认浅灰，与深色背景对比 */
+}
+
+/* 控制栏整体背景、边框与阴影 */
+.vjs-theme-newvideolib.video-js .vjs-control-bar {
+  /* 先清掉 video.js 默认的纯色背景 / 白色边框 */
+  background-color: transparent;
+  border: 0;
+  box-shadow: none;
+
+  /* 再应用自定义黑色渐变（底部更实，上方更透） */
+  background-image: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.92), /* 靠近底边：更接近不透明的黑色 */
+    rgba(0, 0, 0, 0.0)   /* 靠近上边：有明显透明度，能透出画面 */
+  );
+}
+
+/* 普通状态的按钮（播放、音量、全屏等） */
+.vjs-theme-newvideolib.video-js .vjs-control {
+  color: #e5e7eb;
+  text-shadow: none;
+}
+
+/* 悬停与激活时的高亮，使用项目中常用的暖色系高亮 */
+.vjs-theme-newvideolib.video-js .vjs-control:hover,
+.vjs-theme-newvideolib.video-js .vjs-control.vjs-control-active {
+  color: #f97316;
+  text-shadow: 0 0 12px rgba(249, 115, 22, 0.7);
+}
+
+/* 时间文本与当前播放时间 */
+.vjs-theme-newvideolib.video-js .vjs-time-control {
+  color: #e5e7eb;
+}
+
+/* 进度条背景与缓冲、已播放进度 */
+.vjs-theme-newvideolib.video-js .vjs-progress-holder {
+  background-color: rgba(30, 41, 59, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.9);
+}
+
+.vjs-theme-newvideolib.video-js .vjs-load-progress {
+  background-color: rgba(148, 163, 184, 0.65);
+}
+
+.vjs-theme-newvideolib.video-js .vjs-play-progress {
+  /* 使用比大橙色更柔和的暖色，贴合 theme 中的 orange.400/500 风格 */
+  background-color: #fb923c; /* 接近 orange.400 */
+  box-shadow:
+    0 0 6px rgba(251, 146, 60, 0.8),
+    0 0 14px rgba(251, 146, 60, 0.65);
+}
+
+/* 音量条：灰色底 + 橙色已用音量部分 */
+.vjs-theme-newvideolib.video-js .vjs-volume-bar {
+  background-color: rgba(30, 41, 59, 0.95);
+}
+
+.vjs-theme-newvideolib.video-js .vjs-volume-level {
+  background-color: #f97316;
+  box-shadow: 0 0 10px rgba(249, 115, 22, 0.7);
+}
+
+/* 媒体类型图标、播放图标等 icon 的默认颜色 */
+.vjs-theme-newvideolib.video-js .vjs-icon-placeholder:before {
+  color: inherit;
+}
+
+/* 隐藏字幕按钮：根据官方推荐，使用组件类名隐藏更稳妥，
+ * 不去改 controlBar 结构，避免影响其它插件/按钮的默认布局。
+ */
+.vjs-theme-newvideolib.video-js .vjs-subs-caps-button,
+.vjs-theme-newvideolib.video-js .vjs-subtitles-button,
+.vjs-theme-newvideolib.video-js .vjs-captions-button {
+  display: none !important;
+}
+
+/* 菜单（倍速、字幕等）背景与选中态 */
+.vjs-theme-newvideolib.video-js .vjs-menu {
+  background-color: rgba(15, 23, 42, 0.98);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.95);
+}
+
+.vjs-theme-newvideolib.video-js .vjs-menu .vjs-menu-item {
+  color: #e5e7eb;
+}
+
+.vjs-theme-newvideolib.video-js .vjs-menu .vjs-menu-item.vjs-selected {
+  color: #f97316;
+}
+
+.vjs-theme-newvideolib.video-js .vjs-menu .vjs-menu-item:hover {
+  background-color: rgba(30, 64, 175, 0.24);
+}
+
+/* 大播放按钮：与控制栏保持一致的暖色高亮 */
+.vjs-theme-newvideolib.video-js .vjs-big-play-button {
+  border-color: rgba(148, 163, 184, 0.9);
+  color: #e5e7eb;
+  background: radial-gradient(circle at 30% 30%, rgba(249, 250, 251, 0.1), rgba(15, 23, 42, 0.96));
+  box-shadow:
+    0 20px 40px rgba(15, 23, 42, 0.95),
+    0 0 0 1px rgba(15, 23, 42, 0.9);
+}
+
+.vjs-theme-newvideolib.video-js .vjs-big-play-button:hover {
+  border-color: #f97316;
+  color: #f97316;
+  box-shadow:
+    0 24px 50px rgba(15, 23, 42, 0.98),
+    0 0 18px rgba(249, 115, 22, 0.9);
+}
+
+/* 聚焦样式优化（作用于自定义主题）：
+ * - 去掉 video.js 根元素获得焦点时的粗白色轮廓
+ * - 保留控件级别的 focus，可根据需要再定制更精细的视觉效果
+ */
+.vjs-theme-newvideolib.video-js:focus {
+  outline: none;
+}
+
+.vjs-theme-newvideolib.video-js .vjs-control:focus-visible {
+  outline: 2px solid #f97316; /* 柔和一点的高亮色，可按需调整 */
+  outline-offset: 2px;
+}

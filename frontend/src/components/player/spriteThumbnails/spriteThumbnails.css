@@ -1,0 +1,67 @@
+/**
+ * 进度条缩略图展示样式
+ *
+ * 缩略图框悬停进度条时显示在进度条上方；无有效 cue 时 .vjs-sprite-thumbnail-display--empty 为纯黑矩形。
+ *
+ * 开发注意：
+ * - .vjs-control-bar / .vjs-progress-control 需 overflow: visible，否则缩略图会被裁切。
+ * - .vjs-sprite-thumbnail-display 仅对 opacity 做 transition，不对 transform 做过渡，避免位置滞后。
+ * - .vjs-sprite-thumbnail-inner 宽高须与 constants.THUMB_CELL_* 一致（160×90），由 JS 内联 scale 放大。
+ * - 显示尺寸 min-width/min-height 与 constants.THUMB_DISPLAY_* 一致（240×135）。
+ */
+.video-js .vjs-control-bar {
+  overflow: visible;
+}
+.video-js .vjs-progress-control.vjs-sprite-thumbnails-container {
+  overflow: visible;
+}
+
+/* 隐藏进度条原生时间悬浮提示，由缩略图底部 .vjs-sprite-thumbnail-time 替代 */
+.video-js .vjs-progress-control.vjs-sprite-thumbnails-container .vjs-mouse-display {
+  display: none;
+}
+
+/* 缩略图主容器：bottom:100% 贴进度条上方，margin-bottom 负值可再下移（与进度条重叠） */
+.video-js .vjs-sprite-thumbnail-display {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: -4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  overflow: hidden;
+  z-index: 9999;
+  min-width: 240px;
+  min-height: 135px;
+}
+
+/* 内层：格子尺寸 160×90，由 ThumbnailDisplay 内联 transform:scale(1.5) 放大为 240×135 */
+.video-js .vjs-sprite-thumbnail-display .vjs-sprite-thumbnail-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 160px;
+  height: 90px;
+}
+
+/* 无对应 cue 时：纯黑色矩形（后端未就绪、无 VTT 或 time 超出 cue 范围） */
+.video-js .vjs-sprite-thumbnail-display.vjs-sprite-thumbnail-display--empty {
+  background: #000;
+}
+
+/* 缩略图底部时间（替代原生 vjs-mouse-display） */
+.video-js .vjs-sprite-thumbnail-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.75);
+  text-align: center;
+}
