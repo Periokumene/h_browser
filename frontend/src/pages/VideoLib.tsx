@@ -2,14 +2,14 @@ import {
   Badge,
   Box,
   Button,
-  Checkbox,
   Flex,
   Heading,
   Image,
   Input,
-  Menu,
-  MenuButton,
-  MenuList,
+  Popover,
+  PopoverBody,
+  PopoverContent,
+  PopoverTrigger,
   SimpleGrid,
   Spinner,
   Stack,
@@ -48,6 +48,31 @@ interface MediaItem {
   poster_url?: string;
 }
 
+/** 可扩展的列表筛选/排序配置，便于后续新增规则（如排序） */
+export interface ListFilters {
+  genres: string[];
+  tags: string[];
+  // sortBy?: string;
+  // sortOrder?: "asc" | "desc";
+}
+
+/** 从 ListFilters 生成列表 API 的 query params（便于扩展） */
+function filtersToParams(filters: ListFilters): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  if (filters.genres?.length) params.genre = filters.genres;
+  if (filters.tags?.length) params.tag = filters.tags;
+  // if (filters.sortBy) params.sort_by = filters.sortBy;
+  // if (filters.sortOrder) params.sort_order = filters.sortOrder;
+  return params;
+}
+
+function filtersEqual(a: ListFilters, b: ListFilters): boolean {
+  if (a.genres.length !== b.genres.length || a.tags.length !== b.tags.length) return false;
+  const g = new Set(a.genres);
+  const t = new Set(a.tags);
+  return b.genres.every((x) => g.has(x)) && b.tags.every((x) => t.has(x));
+}
+
 interface FilterOptions {
   genres: string[];
   tags: string[];
@@ -62,8 +87,8 @@ export default function VideoLibPage() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ genres: [], tags: [] });
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [filters, setFilters] = useState<ListFilters>({ genres: [], tags: [] });
+  const filtersOnOpenRef = useRef<ListFilters>({ genres: [], tags: [] });
   const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
@@ -73,8 +98,7 @@ export default function VideoLibPage() {
       pageNumber: number,
       keyword: string,
       append: boolean,
-      genres: string[],
-      tags: string[]
+      filterState: ListFilters
     ) => {
       if (append) setLoadingMore(true);
       else setLoading(true);
@@ -83,8 +107,7 @@ export default function VideoLibPage() {
           page: pageNumber,
           page_size: PAGE_SIZE,
           q: keyword || undefined,
-          ...(genres.length ? { genre: genres } : {}),
-          ...(tags.length ? { tag: tags } : {}),
+          ...filtersToParams(filterState),
         };
         const res = await apiClient.get("/api/items", {
           params,
@@ -118,8 +141,8 @@ export default function VideoLibPage() {
   const loadInitial = useCallback(() => {
     setNextPage(1);
     setHasMore(true);
-    loadPage(1, search, false, selectedGenres, selectedTags);
-  }, [search, selectedGenres, selectedTags, loadPage]);
+    loadPage(1, search, false, filters);
+  }, [search, filters, loadPage]);
 
   useEffect(() => {
     loadInitial();
@@ -127,8 +150,8 @@ export default function VideoLibPage() {
 
   const loadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
-    loadPage(nextPage, search, true, selectedGenres, selectedTags);
-  }, [loading, loadingMore, hasMore, nextPage, search, selectedGenres, selectedTags, loadPage]);
+    loadPage(nextPage, search, true, filters);
+  }, [loading, loadingMore, hasMore, nextPage, search, filters, loadPage]);
 
   useEffect(() => {
     apiClient
@@ -169,28 +192,30 @@ export default function VideoLibPage() {
   };
 
   const toggleGenre = (g: string) => {
-    setSelectedGenres((prev) =>
-      prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]
-    );
+    setFilters((prev) => ({
+      ...prev,
+      genres: prev.genres.includes(g) ? prev.genres.filter((x) => x !== g) : [...prev.genres, g],
+    }));
   };
   const toggleTag = (t: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
-    );
+    setFilters((prev) => ({
+      ...prev,
+      tags: prev.tags.includes(t) ? prev.tags.filter((x) => x !== t) : [...prev.tags, t],
+    }));
   };
-  const applyFilters = () => {
-    setNextPage(1);
-    setHasMore(true);
-    loadPage(1, search, false, selectedGenres, selectedTags);
+
+  const hasActiveFilters = filters.genres.length > 0 || filters.tags.length > 0;
+
+  const handleFilterPopoverOpen = () => {
+    filtersOnOpenRef.current = { genres: [...filters.genres], tags: [...filters.tags] };
   };
-  const clearFilters = () => {
-    setSelectedGenres([]);
-    setSelectedTags([]);
-    setNextPage(1);
-    setHasMore(true);
-    loadPage(1, search, false, [], []);
+  const handleFilterPopoverClose = () => {
+    if (!filtersEqual(filtersOnOpenRef.current, filters)) {
+      setNextPage(1);
+      setHasMore(true);
+      loadPage(1, search, false, filters);
+    }
   };
-  const hasActiveFilters = selectedGenres.length > 0 || selectedTags.length > 0;
 
   return (
     <Stack spacing={4}>
@@ -200,69 +225,88 @@ export default function VideoLibPage() {
         </Button>
         <Box flex="1" />
 
-        {/* 类型 / 标签 筛选（Jellyfin 风格） */}
-        <Flex align="center" gap={2} flexWrap="wrap">
-          <Menu closeOnSelect={false}>
-            <MenuButton as={Button} size="sm" variant="outline" rightIcon={null}>
-              类型 {selectedGenres.length ? `(${selectedGenres.length})` : ""}
-            </MenuButton>
-            <MenuList maxH="280px" overflowY="auto">
-              {filterOptions.genres.length === 0 ? (
-                <Box px={3} py={2} color="gray.500" fontSize="sm">
-                  暂无类型（请先扫描）
-                </Box>
-              ) : (
-                filterOptions.genres.map((g) => (
-                  <Checkbox
-                    key={g}
-                    isChecked={selectedGenres.includes(g)}
-                    onChange={() => toggleGenre(g)}
-                    px={3}
-                    py={2}
-                    w="100%"
-                    sx={{ ".chakra-checkbox__label": { w: "100%" } }}
-                  >
-                    {g}
-                  </Checkbox>
-                ))
-              )}
-            </MenuList>
-          </Menu>
-          <Menu closeOnSelect={false}>
-            <MenuButton as={Button} size="sm" variant="outline" rightIcon={null}>
-              标签 {selectedTags.length ? `(${selectedTags.length})` : ""}
-            </MenuButton>
-            <MenuList maxH="280px" overflowY="auto">
-              {filterOptions.tags.length === 0 ? (
-                <Box px={3} py={2} color="gray.500" fontSize="sm">
-                  暂无标签（请先扫描）
-                </Box>
-              ) : (
-                filterOptions.tags.map((t) => (
-                  <Checkbox
-                    key={t}
-                    isChecked={selectedTags.includes(t)}
-                    onChange={() => toggleTag(t)}
-                    px={3}
-                    py={2}
-                    w="100%"
-                    sx={{ ".chakra-checkbox__label": { w: "100%" } }}
-                  >
-                    {t}
-                  </Checkbox>
-                ))
-              )}
-            </MenuList>
-          </Menu>
-          <Button size="sm" variant="outline" onClick={applyFilters}>
-            应用筛选
-          </Button>
-          {hasActiveFilters && (
-            <Button size="sm" variant="ghost" onClick={clearFilters}>
-              清除筛选
+        {/* 单一过滤器按钮：点击弹出浮窗，Badge 切换启用，关闭时若有变化则刷新 */}
+        <Popover
+          placement="bottom-start"
+          onOpen={handleFilterPopoverOpen}
+          onClose={handleFilterPopoverClose}
+          closeOnBlur
+        >
+          <PopoverTrigger>
+            <Button
+              size="sm"
+              variant={hasActiveFilters ? "solid" : "outline"}
+              colorScheme={hasActiveFilters ? "blue" : undefined}
+            >
+              过滤器
+              {hasActiveFilters && ` (${filters.genres.length + filters.tags.length})`}
             </Button>
-          )}
-        </Flex>
+          </PopoverTrigger>
+          <PopoverContent w="auto" minW="280px" maxW="400px" _focus={{ outline: 0 }}>
+            <PopoverBody>
+              <Stack spacing={4}>
+                <Box>
+                  <Text fontSize="xs" color="gray.500" mb={2} fontWeight="bold">
+                    类型
+                  </Text>
+                  <Flex gap={2} flexWrap="wrap">
+                    {filterOptions.genres.length === 0 ? (
+                      <Text fontSize="sm" color="gray.500">
+                        暂无（请先扫描）
+                      </Text>
+                    ) : (
+                      filterOptions.genres.map((g) => {
+                        const on = filters.genres.includes(g);
+                        return (
+                          <Badge
+                            key={g}
+                            variant={on ? "solid" : "outline"}
+                            colorScheme={on ? "blue" : "gray"}
+                            cursor="pointer"
+                            fontWeight="bold"
+                            onClick={() => toggleGenre(g)}
+                            _hover={{ opacity: 0.9 }}
+                          >
+                            {g}
+                          </Badge>
+                        );
+                      })
+                    )}
+                  </Flex>
+                </Box>
+                <Box>
+                  <Text fontSize="xs" color="gray.500" mb={2}>
+                    标签
+                  </Text>
+                  <Flex gap={2} flexWrap="wrap">
+                    {filterOptions.tags.length === 0 ? (
+                      <Text fontSize="sm" color="gray.500">
+                        暂无（请先扫描）
+                      </Text>
+                    ) : (
+                      filterOptions.tags.map((t) => {
+                        const on = filters.tags.includes(t);
+                        return (
+                          <Badge
+                            key={t}
+                            variant={on ? "solid" : "outline"}
+                            colorScheme={on ? "blue" : "gray"}
+                            cursor="pointer"
+                            fontWeight="normal"
+                            onClick={() => toggleTag(t)}
+                            _hover={{ opacity: 0.9 }}
+                          >
+                            {t}
+                          </Badge>
+                        );
+                      })
+                    )}
+                  </Flex>
+                </Box>
+              </Stack>
+            </PopoverBody>
+          </PopoverContent>
+        </Popover>
 
         <Input
           placeholder="按番号或标题搜索"
