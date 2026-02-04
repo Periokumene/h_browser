@@ -325,15 +325,15 @@ export default function VideoLibPage() {
         </Popover>
 
         <Input
-          placeholder="按番号或标题搜索"
+          placeholder="按番号或标题搜索（Enter 提交）"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") loadInitial();
+          }}
           maxW="260px"
           size="sm"
         />
-        <Button size="sm" onClick={() => loadInitial()} ml={2} variant="outline">
-          搜索
-        </Button>
       </Flex>
 
       {loading ? (
