@@ -65,8 +65,8 @@ function MetaLine({
   if (hideIfEmpty && (value === undefined || value === null || value === ""))
     return null;
   return (
-    <Text fontSize="sm" color="gray.400">
-      <Text as="span" color="gray.500" mr={2}>
+    <Text fontSize="sm" color="app.muted.fg">
+      <Text as="span" color="app.muted" mr={2}>
         {label}:
       </Text>
       {String(value)}
@@ -141,7 +141,7 @@ export default function DetailPage() {
           flexShrink={0}
           borderRadius="lg"
           overflow="hidden"
-          bg="gray.800"
+          bg="app.surface"
           boxShadow="lg"
         >
           <Box aspectRatio={2 / 3} position="relative">
@@ -161,7 +161,7 @@ export default function DetailPage() {
                 h="100%"
                 align="center"
                 justify="center"
-                color="gray.500"
+                color="app.muted"
                 fontSize="sm"
               >
                 无海报
@@ -176,7 +176,7 @@ export default function DetailPage() {
             {item.title || item.code}
           </Heading>
           <Flex align="center" gap={2} flexWrap="wrap">
-            <Text fontSize="sm" color="gray.500">
+            <Text fontSize="sm" color="app.muted">
               番号：{item.code}
             </Text>
             {item.has_video ? (
@@ -185,7 +185,7 @@ export default function DetailPage() {
               <Badge colorScheme="red">无视频</Badge>
             )}
             {item.video_type && (
-              <Badge variant="outline">{item.video_type}</Badge>
+              <Badge variant="outline" colorScheme="gray">{item.video_type}</Badge>
             )}
           </Flex>
 
@@ -195,7 +195,7 @@ export default function DetailPage() {
               <Text fontSize="sm" color="gray.300">
                 评分 {meta.rating}
                 {meta.votes != null && meta.votes > 0 && (
-                  <Text as="span" color="gray.500" ml={1}>
+                  <Text as="span" color="app.muted" ml={1}>
                     ({meta.votes})
                   </Text>
                 )}
@@ -215,7 +215,7 @@ export default function DetailPage() {
             <Wrap spacing={2}>
               {meta?.genres?.map((g) => (
                 <WrapItem key={g}>
-                  <Badge colorScheme="blue" variant="subtle">
+                  <Badge colorScheme="orange" variant="subtle">
                     {g}
                   </Badge>
                 </WrapItem>
@@ -232,15 +232,14 @@ export default function DetailPage() {
 
           {/* 简短概述 */}
           {meta?.outline && (
-            <Text fontSize="sm" color="gray.400" noOfLines={3}>
+            <Text fontSize="sm" color="app.muted.fg" noOfLines={3}>
               {meta.outline}
             </Text>
           )}
 
-
           {/* 播放按钮 */}
           <Button
-            colorScheme="teal"
+            colorScheme="orange"
             size="lg"
             isDisabled={!item.has_video}
             onClick={() => navigate(`/play/${encodeURIComponent(item.code)}`)}

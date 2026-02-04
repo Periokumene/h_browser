@@ -233,7 +233,7 @@ export default function VideoLibPage() {
             <Button
               size="sm"
               variant={hasActiveFilters ? "solid" : "outline"}
-              colorScheme={hasActiveFilters ? "blue" : undefined}
+              colorScheme={hasActiveFilters ? "orange" : undefined}
             >
               过滤器
               {hasActiveFilters && ` (${filters.genres.length + filters.tags.length})`}
@@ -247,7 +247,7 @@ export default function VideoLibPage() {
                   <Button
                     size="xs"
                     variant={filters.filterMode === "and" ? "solid" : "outline"}
-                    colorScheme="blue"
+                    colorScheme="orange"
                     onClick={() => setFilterMode("and")}
                   >
                     交集
@@ -255,20 +255,20 @@ export default function VideoLibPage() {
                   <Button
                     size="xs"
                     variant={filters.filterMode === "or" ? "solid" : "outline"}
-                    colorScheme="blue"
+                    colorScheme="orange"
                     onClick={() => setFilterMode("or")}
                   >
                     并集
                   </Button>
                 </Flex>
-                {/* 类型：与 Detail 一致用 blue 基础色 */}
+                {/* 类型：温馨主色 */}
                 <Box>
-                  <Text fontSize="xs" color="gray.500" mb={2}>
+                  <Text fontSize="xs" color="app.muted" mb={2}>
                     类型
                   </Text>
                   <Flex gap={2} flexWrap="wrap">
                     {filterOptions.genres.length === 0 ? (
-                      <Text fontSize="sm" color="gray.500">
+                      <Text fontSize="sm" color="app.muted">
                         暂无（请先扫描）
                       </Text>
                     ) : (
@@ -278,7 +278,7 @@ export default function VideoLibPage() {
                           <Badge
                             key={g}
                             variant={on ? "solid" : "subtle"}
-                            colorScheme="blue"
+                            colorScheme="orange"
                             cursor="pointer"
                             onClick={() => toggleGenre(g)}
                             _hover={{ opacity: 0.9 }}
@@ -290,14 +290,14 @@ export default function VideoLibPage() {
                     )}
                   </Flex>
                 </Box>
-                {/* 标签：与 Detail 一致用 gray 基础色 */}
+                {/* 标签：中性色 */}
                 <Box>
-                  <Text fontSize="xs" color="gray.500" mb={2}>
+                  <Text fontSize="xs" color="app.muted" mb={2}>
                     标签
                   </Text>
                   <Flex gap={2} flexWrap="wrap">
                     {filterOptions.tags.length === 0 ? (
-                      <Text fontSize="sm" color="gray.500">
+                      <Text fontSize="sm" color="app.muted">
                         暂无（请先扫描）
                       </Text>
                     ) : (
@@ -359,25 +359,25 @@ export default function VideoLibPage() {
                   w="100%"
                   maxW="min(320px, 26vw)"
                   borderWidth="1px"
-                  borderColor="whiteAlpha.200"
+                  borderColor="app.border"
                   borderRadius="md"
                   overflow="hidden"
                   cursor="pointer"
-                  bg="gray.800"
+                  bg="app.surface"
                   transition="all 0.28s ease"
                   _hover={{
                     shadow: "xl",
                     borderWidth: "2px",
-                    borderColor: "whiteAlpha.500"
+                    borderColor: "app.border.hover",
                   }}
                   sx={{
-                    "&:hover .poster-img": { transform: "scale(1.08)" }
+                    "&:hover .poster-img": { transform: "scale(1.08)" },
                   }}
                   onClick={() => navigate(`/detail/${encodeURIComponent(item.code)}`)}
                 >
                   <Box
                     aspectRatio="2/3"
-                    bg="gray.700"
+                    bg="app.surface.subtle"
                     position="relative"
                     overflow="hidden"
                   >
@@ -401,7 +401,7 @@ export default function VideoLibPage() {
                         h="100%"
                         align="center"
                         justify="center"
-                        color="gray.500"
+                        color="app.muted"
                         fontSize="sm"
                       >
                         无海报
@@ -412,7 +412,7 @@ export default function VideoLibPage() {
                     <Heading size="sm" noOfLines={2} mb={1}>
                       {item.title || item.code}
                     </Heading>
-                    <Text fontSize="xs" color="gray.400" noOfLines={1}>
+                    <Text fontSize="xs" color="app.muted.fg" noOfLines={1}>
                       {item.code}
                     </Text>
                     <Flex mt={2} gap={2} align="center" flexWrap="wrap">
@@ -422,7 +422,7 @@ export default function VideoLibPage() {
                         <Badge colorScheme="red" size="sm">无视频</Badge>
                       )}
                       {item.video_type && (
-                        <Badge variant="outline" size="sm">{item.video_type}</Badge>
+                        <Badge variant="outline" size="sm" colorScheme="gray">{item.video_type}</Badge>
                       )}
                     </Flex>
                   </Box>
@@ -435,12 +435,12 @@ export default function VideoLibPage() {
           <Box ref={sentinelRef} h="1px" w="100%" aria-hidden />
 
           <Flex align="center" justify="center" py={4} gap={2}>
-            <Text fontSize="sm" color="gray.500">
+            <Text fontSize="sm" color="app.muted">
               已加载 {items.length} 条{total > 0 ? `，共 ${total} 条` : ""}
             </Text>
-            {loadingMore && <Spinner size="sm" />}
+            {loadingMore && <Spinner size="sm" color="orange.400" />}
             {!hasMore && items.length > 0 && (
-              <Text fontSize="sm" color="gray.500">
+              <Text fontSize="sm" color="app.muted">
                 已加载全部
               </Text>
             )}

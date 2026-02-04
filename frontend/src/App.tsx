@@ -4,10 +4,10 @@ import {
   Flex,
   Heading,
   Spacer,
-  useColorMode,
   useColorModeValue
 } from "@chakra-ui/react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { warmNeutrals } from "./theme";
 import LoginPage from "./pages/Login";
 import WelcomePage from "./pages/Welcome";
 import VideoLibPage from "./pages/VideoLib";
@@ -23,8 +23,8 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
-  const { colorMode, toggleColorMode } = useColorMode();
-  const bg = useColorModeValue("gray.100", "gray.900");
+  const bg = useColorModeValue("gray.50", warmNeutrals.bg);
+  const borderColor = useColorModeValue("gray.200", "whiteAlpha.200");
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -33,12 +33,13 @@ function Layout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <Box minH="100vh" bg={bg}>
+    <Box minH="100vh" bg={bg} transition="background-color 0.2s ease">
       <Flex
         as="header"
         px={6}
         py={4}
         borderBottomWidth="1px"
+        borderColor={borderColor}
         align="center"
         gap={4}
       >
@@ -46,6 +47,8 @@ function Layout({ children }: { children: React.ReactNode }) {
           size="md"
           cursor="pointer"
           onClick={() => navigate("/")}
+          _hover={{ opacity: 0.85 }}
+          transition="opacity 0.2s ease"
         >
           个人影音库
         </Heading>

@@ -167,7 +167,7 @@ export default function PlayPage() {
       <Heading size="md" mb={4}>
         播放：{code}
         {(videoType || "").toLowerCase() === "ts" && (
-          <Text as="span" fontSize="sm" fontWeight="normal" color="gray.400" ml={2}>
+          <Text as="span" fontSize="sm" fontWeight="normal" color="app.muted.fg" ml={2}>
             (HLS)
           </Text>
         )}

@@ -48,14 +48,14 @@ export default function LoginPage() {
       display="flex"
       alignItems="center"
       justifyContent="center"
-      bg="gray.900"
+      bg="app.bg"
     >
-      <Card w="sm" bg="gray.800" color="white">
+      <Card w="sm" bg="app.surface">
         <CardBody>
           <Heading size="md" mb={4}>
             登录个人影音库
           </Heading>
-          <Text fontSize="sm" mb={4} color="gray.300">
+          <Text fontSize="sm" mb={4} color="app.muted.fg">
             默认账号密码为 admin / admin，可在后端环境变量中修改。
           </Text>
           <Box as="form" onSubmit={handleSubmit}>
@@ -77,7 +77,7 @@ export default function LoginPage() {
               </FormControl>
               <Button
                 type="submit"
-                colorScheme="teal"
+                colorScheme="orange"
                 isLoading={loading}
               >
                 登录

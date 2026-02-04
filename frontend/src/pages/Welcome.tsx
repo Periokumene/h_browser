@@ -9,7 +9,7 @@ export default function WelcomePage() {
       <Stack align="center" spacing={6}>
         <Heading size="lg">欢迎使用个人影音库</Heading>
         <Button
-          colorScheme="blue"
+          colorScheme="orange"
           size="lg"
           onClick={() => navigate("/videolib")}
         >
