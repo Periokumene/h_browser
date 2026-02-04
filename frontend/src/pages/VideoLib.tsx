@@ -28,7 +28,7 @@ interface MediaItem {
   poster_url?: string;
 }
 
-export default function ListPage() {
+export default function VideoLibPage() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -209,4 +209,3 @@ export default function ListPage() {
     </Stack>
   );
 }
-

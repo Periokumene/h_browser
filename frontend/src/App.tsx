@@ -9,7 +9,8 @@ import {
 } from "@chakra-ui/react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import LoginPage from "./pages/Login";
-import ListPage from "./pages/List";
+import WelcomePage from "./pages/Welcome";
+import VideoLibPage from "./pages/VideoLib";
 import DetailPage from "./pages/Detail";
 import PlayPage from "./pages/Play";
 
@@ -72,7 +73,17 @@ export default function App() {
         element={
           <RequireAuth>
             <Layout>
-              <ListPage />
+              <WelcomePage />
+            </Layout>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/videolib"
+        element={
+          <RequireAuth>
+            <Layout>
+              <VideoLibPage />
             </Layout>
           </RequireAuth>
         }
