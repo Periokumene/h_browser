@@ -77,6 +77,16 @@ def _float_or_none(s: Optional[str]) -> Optional[float]:
         return None
 
 
+def _is_local_path(s: Optional[str]) -> bool:
+    """判断是否为本地路径（非 URL、非空），用于决定是否采用 NFO 中的 thumb/fanart 值。"""
+    if not s or not s.strip():
+        return False
+    s = s.strip()
+    if s.startswith("http://") or s.startswith("https://"):
+        return False
+    return True
+
+
 def parse_nfo(nfo_path: Path) -> VideoMetadata:
     """从 NFO 文件解析元数据。根节点支持 movie / movieinfo 等常见标签，缺失字段为 None 或空列表。"""
     meta = VideoMetadata()
@@ -123,64 +133,130 @@ def parse_nfo(nfo_path: Path) -> VideoMetadata:
         thumb = _text(actor_el.find("thumb"))
         meta.actors.append(ActorInfo(name=name, role=role, thumb=thumb))
 
-    # 海报/缩略图：优先 aspect="poster" 或 type="poster" 的 thumb，否则第一个 thumb
-    thumb_el = root.find('thumb[@aspect="poster"]') or root.find('thumb[@type="poster"]')
-    if thumb_el is not None:
-        meta.poster_path = _text(thumb_el)
-    if not meta.poster_path:
-        first_thumb = root.find("thumb")
-        if first_thumb is not None:
-            meta.poster_path = _text(first_thumb) or meta.thumb
-            meta.thumb = meta.poster_path
-    if not meta.poster_path:
-        meta.thumb = _text(root.find("thumb"))
+    # 海报：优先从明确标记为 poster 的字段获取
+    for poster_el in (
+        root.find("poster"),
+        root.find('thumb[@aspect="poster"]'),
+        root.find('thumb[@type="poster"]'),
+    ):
+        if poster_el is not None:
+            t = _text(poster_el)
+            if _is_local_path(t):
+                meta.poster_path = t
+                break
 
+    # 缩略图：优先从明确标记为 thumb/thumbnail 的字段获取（排除已用于 poster 的）
+    # 先尝试 <thumbnail>
+    thumbnail_el = root.find("thumbnail")
+    if thumbnail_el is not None:
+        t = _text(thumbnail_el)
+        if _is_local_path(t):
+            meta.thumb = t
+    # 如果 thumb 未设置，再尝试所有 <thumb>（跳过已用于 poster 的）
+    if not meta.thumb:
+        for thumb_el in root.findall("thumb"):
+            # 跳过已用于 poster 的 thumb（aspect="poster" 或 type="poster"）
+            if thumb_el.get("aspect") == "poster" or thumb_el.get("type") == "poster":
+                continue
+            t = _text(thumb_el)
+            if _is_local_path(t):
+                meta.thumb = t
+                break
+
+    # fanart：<fanart> 或 <fanart><thumb>...</thumb></fanart>
     fanart = root.find("fanart")
     if fanart is not None:
-        # 有时 fanart 下有多张图，取第一张
         first = fanart.find("thumb") or fanart
-        meta.fanart_path = _text(first) if first is not None else _text(fanart)
+        t = _text(first) if first is not None else _text(fanart)
+        if _is_local_path(t):
+            meta.fanart_path = t
 
     return meta
 
 
-def get_poster_path(nfo_path: Path, code: str, metadata: VideoMetadata) -> Optional[Path]:
-    """根据 NFO 路径、番号与已解析元数据，解析出海报文件的绝对路径。
-
-    - 若 metadata.poster_path 或 metadata.thumb 为相对路径，则相对于 NFO 所在目录。
-    - 若为绝对路径则直接使用（需存在）。
-    - 若 NFO 中无海报路径，则尝试同目录下常见文件名：poster.jpg, poster.png, {code}.jpg, {code}-poster.jpg。
-    """
-    nfo_dir = nfo_path.parent.resolve()
-    candidate = metadata.poster_path or metadata.thumb
+def _resolve_art_path(
+    nfo_dir: Path,
+    candidate: Optional[str],
+    code: str,
+    fallback_names: tuple[str, ...],
+) -> Optional[Path]:
+    """先尝试 candidate（相对/绝对），不存在则按 fallback_names 在同目录查找。"""
     if candidate:
         c = candidate.strip()
         p = Path(c)
         if p.is_absolute():
             if p.exists():
                 return p
-            return None
-        # 相对路径
-        resolved = (nfo_dir / c).resolve()
-        if resolved.exists():
-            return resolved
+        else:
+            resolved = (nfo_dir / c).resolve()
+            if resolved.exists():
+                return resolved
+    for name in fallback_names:
+        path = nfo_dir / name
+        if path.exists():
+            return path
+    return None
 
-    # 常见文件名
-    for name in (
+
+def _poster_fallback_names(code: str) -> tuple[str, ...]:
+    return (
+        f"{code}-poster.jpg",
+        f"{code}-poster.png",
+        f"{code}-thumb.jpg",
+        f"{code}-thumb.png",
         "poster.jpg",
         "poster.png",
         "poster.jpeg",
         "poster.webp",
         f"{code}.jpg",
         f"{code}.png",
-        f"{code}-poster.jpg",
         "thumb.jpg",
         "folder.jpg",
-    ):
-        path = nfo_dir / name
-        if path.exists():
-            return path
-    return None
+    )
+
+
+def _fanart_fallback_names(code: str) -> tuple[str, ...]:
+    return (
+        f"{code}-fanart.jpg",
+        f"{code}-fanart.png",
+        "fanart.jpg",
+        "fanart.png",
+        "fanart.jpeg",
+    )
+
+
+def _thumb_fallback_names(code: str) -> tuple[str, ...]:
+    return (
+        f"{code}-thumb.jpg",
+        f"{code}-thumb.png",
+        f"{code}-poster.jpg",
+        f"{code}-poster.png",
+        "thumb.jpg",
+        "poster.jpg",
+        "folder.jpg",
+    )
+
+
+def get_poster_path(nfo_path: Path, code: str, metadata: VideoMetadata) -> Optional[Path]:
+    """根据 NFO 路径、番号与已解析元数据，解析出海报文件的绝对路径。"""
+    nfo_dir = nfo_path.parent.resolve()
+    candidate = metadata.poster_path or metadata.thumb
+    return _resolve_art_path(nfo_dir, candidate, code, _poster_fallback_names(code))
+
+
+def get_fanart_path(nfo_path: Path, code: str, metadata: VideoMetadata) -> Optional[Path]:
+    """解析 fanart 图片绝对路径，约定同目录 {code}-fanart.jpg 等。"""
+    nfo_dir = nfo_path.parent.resolve()
+    return _resolve_art_path(
+        nfo_dir, metadata.fanart_path, code, _fanart_fallback_names(code)
+    )
+
+
+def get_thumb_path(nfo_path: Path, code: str, metadata: VideoMetadata) -> Optional[Path]:
+    """解析 thumb 缩略图绝对路径，约定同目录 {code}-thumb.jpg、{code}-poster.jpg 等。"""
+    nfo_dir = nfo_path.parent.resolve()
+    candidate = metadata.thumb or metadata.poster_path
+    return _resolve_art_path(nfo_dir, candidate, code, _thumb_fallback_names(code))
 
 
 # ---------------------------------------------------------------------------
