@@ -12,13 +12,15 @@ import {
   Text,
   useToast
 } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 const getBaseUrl = () =>
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 const getToken = () => localStorage.getItem("authToken");
+
+const PAGE_SIZE = 24;
 
 interface MediaItem {
   code: string;
@@ -31,38 +33,82 @@ interface MediaItem {
 export default function VideoLibPage() {
   const [items, setItems] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [nextPage, setNextPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [pageSize] = useState(20);
+  const [hasMore, setHasMore] = useState(true);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
 
-  const load = async (pageNumber: number, keyword: string) => {
-    setLoading(true);
-    try {
-      const res = await apiClient.get("/api/items", {
-        params: {
-          page: pageNumber,
-          page_size: pageSize,
-          q: keyword || undefined
+  const loadPage = useCallback(
+    async (pageNumber: number, keyword: string, append: boolean) => {
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      try {
+        const res = await apiClient.get("/api/items", {
+          params: {
+            page: pageNumber,
+            page_size: PAGE_SIZE,
+            q: keyword || undefined
+          }
+        });
+        const list = res.data.items as MediaItem[];
+        const totalCount = res.data.total as number;
+        setTotal(totalCount);
+        if (append) {
+          setItems((prev) => {
+            const codes = new Set(prev.map((i) => i.code));
+            const added = list.filter((i) => !codes.has(i.code));
+            return prev.concat(added);
+          });
+        } else {
+          setItems(list);
         }
-      });
-      setItems(res.data.items);
-      setTotal(res.data.total);
-      setPage(res.data.page);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || "加载列表失败";
-      toast({ title: msg, status: "error" });
-    } finally {
-      setLoading(false);
-    }
-  };
+        setNextPage(pageNumber + 1);
+        setHasMore(list.length === PAGE_SIZE && items.length + list.length < totalCount);
+      } catch (err: any) {
+        const msg = err?.response?.data?.error || "加载列表失败";
+        toast({ title: msg, status: "error" });
+      } finally {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
+    },
+    [toast]
+  );
+
+  // 初始加载与搜索：从第一页开始，不追加
+  const loadInitial = useCallback(() => {
+    setNextPage(1);
+    setHasMore(true);
+    loadPage(1, search, false);
+  }, [search, loadPage]);
 
   useEffect(() => {
-    load(1, "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadInitial();
   }, []);
+
+  // 加载更多（下一页）
+  const loadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return;
+    loadPage(nextPage, search, true);
+  }, [loading, loadingMore, hasMore, nextPage, search, loadPage]);
+
+  // 滚动到底部时加载更多
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore();
+      },
+      { rootMargin: "200px", threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loadMore]);
 
   const handleScan = async () => {
     try {
@@ -72,14 +118,12 @@ export default function VideoLibPage() {
         description: `本次处理 ${res.data.processed} 条记录`,
         status: "success"
       });
-      load(page, search);
+      loadInitial();
     } catch (err: any) {
       const msg = err?.response?.data?.error || "触发扫描失败";
       toast({ title: msg, status: "error" });
     }
   };
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <Stack spacing={4}>
@@ -96,12 +140,7 @@ export default function VideoLibPage() {
           maxW="260px"
           size="sm"
         />
-        <Button
-          size="sm"
-          onClick={() => load(1, search)}
-          ml={2}
-          variant="outline"
-        >
+        <Button size="sm" onClick={() => loadInitial()} ml={2} variant="outline">
           搜索
         </Button>
       </Flex>
@@ -129,22 +168,39 @@ export default function VideoLibPage() {
                   w="100%"
                   maxW="min(320px, 26vw)"
                   borderWidth="1px"
+                  borderColor="whiteAlpha.200"
                   borderRadius="md"
                   overflow="hidden"
                   cursor="pointer"
-                  _hover={{ shadow: "md" }}
-                  onClick={() => navigate(`/detail/${encodeURIComponent(item.code)}`)}
                   bg="gray.800"
+                  transition="all 0.28s ease"
+                  _hover={{
+                    shadow: "xl",
+                    borderWidth: "2px",
+                    borderColor: "whiteAlpha.500"
+                  }}
+                  sx={{
+                    "&:hover .poster-img": { transform: "scale(1.08)" }
+                  }}
+                  onClick={() => navigate(`/detail/${encodeURIComponent(item.code)}`)}
                 >
-                  <Box aspectRatio="2/3" bg="gray.700" position="relative">
+                  <Box
+                    aspectRatio="2/3"
+                    bg="gray.700"
+                    position="relative"
+                    overflow="hidden"
+                  >
                     {posterUrl ? (
                       <Image
+                        className="poster-img"
                         src={posterUrl}
                         alt={item.title || item.code}
                         objectFit="cover"
                         w="100%"
                         h="100%"
                         fallbackSrc=""
+                        transition="transform 0.35s ease"
+                        sx={{ transformOrigin: "center center" }}
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = "none";
                         }}
@@ -183,26 +239,20 @@ export default function VideoLibPage() {
               );
             })}
           </SimpleGrid>
-          <Flex align="center" justify="space-between" pt={2}>
+
+          {/* 底部哨兵：进入视口时触发加载更多 */}
+          <Box ref={sentinelRef} h="1px" w="100%" aria-hidden />
+
+          <Flex align="center" justify="center" py={4} gap={2}>
             <Text fontSize="sm" color="gray.500">
-              共 {total} 条，第 {page} / {totalPages} 页
+              已加载 {items.length} 条{total > 0 ? `，共 ${total} 条` : ""}
             </Text>
-            <Flex gap={2}>
-              <Button
-                size="sm"
-                onClick={() => load(page - 1, search)}
-                isDisabled={page <= 1}
-              >
-                上一页
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => load(page + 1, search)}
-                isDisabled={page >= totalPages}
-              >
-                下一页
-              </Button>
-            </Flex>
+            {loadingMore && <Spinner size="sm" />}
+            {!hasMore && items.length > 0 && (
+              <Text fontSize="sm" color="gray.500">
+                已加载全部
+              </Text>
+            )}
           </Flex>
         </>
       )}
