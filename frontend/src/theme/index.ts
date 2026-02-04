@@ -41,9 +41,12 @@ const theme = extendTheme({
     },
   },
 
-  /** 全局样式：过渡、字体 */
+  /** 全局样式：过渡、字体、滚动条占位防抖动 */
   styles: {
     global: (props: { colorMode: string }) => ({
+      "html": {
+        scrollbarGutter: "stable",
+      },
       "html, body": {
         bg: props.colorMode === "dark" ? warmNeutrals.bg : "gray.50",
         transition: "background-color 0.2s ease",
