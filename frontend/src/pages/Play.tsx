@@ -84,6 +84,8 @@ export default function PlayPage() {
         hlsRef.current = hls;
         hls.loadSource(url);
         hls.attachMedia(video);
+        const onReady = () => video.play().catch(() => {});
+        hls.on(Hls.Events.MANIFEST_PARSED, onReady);
         hls.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string; details?: string; response?: { code?: number } }) => {
           if (data.fatal) {
             const detail = [data.type, data.details, data.response?.code != null ? `HTTP ${data.response.code}` : ""].filter(Boolean).join(" ");
@@ -97,13 +99,17 @@ export default function PlayPage() {
           }
         });
         return () => {
+          hls.off(Hls.Events.MANIFEST_PARSED, onReady);
           hls.destroy();
           hlsRef.current = null;
         };
       }
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = url;
+        const onCanPlay = () => video.play().catch(() => {});
+        video.addEventListener("canplay", onCanPlay);
         return () => {
+          video.removeEventListener("canplay", onCanPlay);
           video.src = "";
         };
       }
@@ -115,7 +121,10 @@ export default function PlayPage() {
     }
 
     video.src = streamUrl();
+    const onCanPlay = () => video.play().catch(() => {});
+    video.addEventListener("canplay", onCanPlay);
     return () => {
+      video.removeEventListener("canplay", onCanPlay);
       video.src = "";
     };
   }, [code, videoType, loading, error, streamUrl, m3u8Url, toast]);
@@ -167,6 +176,8 @@ export default function PlayPage() {
         <video
           ref={videoRef}
           controls
+          autoPlay
+          playsInline
           style={{ width: "100%", maxHeight: "80vh" }}
         />
       </Box>

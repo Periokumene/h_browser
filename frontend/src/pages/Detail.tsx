@@ -71,7 +71,7 @@ export default function DetailPage() {
             navigate(`/play/${encodeURIComponent(item.code)}`)
           }
         >
-          播放
+          播放xxx
         </Button>
       </Box>
     </Stack>
