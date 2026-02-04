@@ -112,7 +112,12 @@ export default function ListPage() {
         </Flex>
       ) : (
         <>
-          <SimpleGrid minChildWidth="200px" spacing={4}>
+          <SimpleGrid
+            minChildWidth="200px"
+            spacing={4}
+            justifyItems="center"
+            sx={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, min(320px, 26vw)))" }}
+          >
             {items.map((item) => {
               const token = getToken();
               const posterUrl = item.poster_url
@@ -121,6 +126,8 @@ export default function ListPage() {
               return (
                 <Box
                   key={item.code}
+                  w="100%"
+                  maxW="min(320px, 26vw)"
                   borderWidth="1px"
                   borderRadius="md"
                   overflow="hidden"
