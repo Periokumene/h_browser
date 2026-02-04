@@ -48,10 +48,14 @@ interface MediaItem {
   poster_url?: string;
 }
 
+/** 过滤规则：交集 = 同时满足类型与标签；并集 = 满足类型或标签其一即可 */
+export type FilterRuleMode = "and" | "or";
+
 /** 可扩展的列表筛选/排序配置，便于后续新增规则（如排序） */
 export interface ListFilters {
   genres: string[];
   tags: string[];
+  filterMode: FilterRuleMode;
   // sortBy?: string;
   // sortOrder?: "asc" | "desc";
 }
@@ -61,16 +65,10 @@ function filtersToParams(filters: ListFilters): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   if (filters.genres?.length) params.genre = filters.genres;
   if (filters.tags?.length) params.tag = filters.tags;
+  params.filter_mode = filters.filterMode;
   // if (filters.sortBy) params.sort_by = filters.sortBy;
   // if (filters.sortOrder) params.sort_order = filters.sortOrder;
   return params;
-}
-
-function filtersEqual(a: ListFilters, b: ListFilters): boolean {
-  if (a.genres.length !== b.genres.length || a.tags.length !== b.tags.length) return false;
-  const g = new Set(a.genres);
-  const t = new Set(a.tags);
-  return b.genres.every((x) => g.has(x)) && b.tags.every((x) => t.has(x));
 }
 
 interface FilterOptions {
@@ -87,8 +85,8 @@ export default function VideoLibPage() {
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ genres: [], tags: [] });
-  const [filters, setFilters] = useState<ListFilters>({ genres: [], tags: [] });
-  const filtersOnOpenRef = useRef<ListFilters>({ genres: [], tags: [] });
+  const [filters, setFilters] = useState<ListFilters>({ genres: [], tags: [], filterMode: "and" });
+  const isFirstFilterMount = useRef(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
@@ -148,6 +146,17 @@ export default function VideoLibPage() {
     loadInitial();
   }, []);
 
+  // 任何过滤项或规则变化都立即刷新列表（不依赖浮窗关闭）
+  useEffect(() => {
+    if (isFirstFilterMount.current) {
+      isFirstFilterMount.current = false;
+      return;
+    }
+    setNextPage(1);
+    setHasMore(true);
+    loadPage(1, search, false, filters);
+  }, [filters]);
+
   const loadMore = useCallback(() => {
     if (loading || loadingMore || !hasMore) return;
     loadPage(nextPage, search, true, filters);
@@ -204,18 +213,11 @@ export default function VideoLibPage() {
     }));
   };
 
-  const hasActiveFilters = filters.genres.length > 0 || filters.tags.length > 0;
+  const setFilterMode = (mode: FilterRuleMode) => {
+    setFilters((prev) => ({ ...prev, filterMode: mode }));
+  };
 
-  const handleFilterPopoverOpen = () => {
-    filtersOnOpenRef.current = { genres: [...filters.genres], tags: [...filters.tags] };
-  };
-  const handleFilterPopoverClose = () => {
-    if (!filtersEqual(filtersOnOpenRef.current, filters)) {
-      setNextPage(1);
-      setHasMore(true);
-      loadPage(1, search, false, filters);
-    }
-  };
+  const hasActiveFilters = filters.genres.length > 0 || filters.tags.length > 0;
 
   return (
     <Stack spacing={4}>
@@ -225,13 +227,8 @@ export default function VideoLibPage() {
         </Button>
         <Box flex="1" />
 
-        {/* 单一过滤器按钮：点击弹出浮窗，Badge 切换启用，关闭时若有变化则刷新 */}
-        <Popover
-          placement="bottom-start"
-          onOpen={handleFilterPopoverOpen}
-          onClose={handleFilterPopoverClose}
-          closeOnBlur
-        >
+        {/* 单一过滤器按钮：点击弹出浮窗，Badge 切换启用，任意修改即刷新 */}
+        <Popover placement="bottom-start" closeOnBlur>
           <PopoverTrigger>
             <Button
               size="sm"
@@ -245,8 +242,28 @@ export default function VideoLibPage() {
           <PopoverContent w="auto" minW="280px" maxW="400px" _focus={{ outline: 0 }}>
             <PopoverBody>
               <Stack spacing={4}>
+                {/* 交集 / 并集 */}
+                <Flex align="center" gap={2}>
+                  <Button
+                    size="xs"
+                    variant={filters.filterMode === "and" ? "solid" : "outline"}
+                    colorScheme="blue"
+                    onClick={() => setFilterMode("and")}
+                  >
+                    交集
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant={filters.filterMode === "or" ? "solid" : "outline"}
+                    colorScheme="blue"
+                    onClick={() => setFilterMode("or")}
+                  >
+                    并集
+                  </Button>
+                </Flex>
+                {/* 类型：与 Detail 一致用 blue 基础色 */}
                 <Box>
-                  <Text fontSize="xs" color="gray.500" mb={2} fontWeight="bold">
+                  <Text fontSize="xs" color="gray.500" mb={2}>
                     类型
                   </Text>
                   <Flex gap={2} flexWrap="wrap">
@@ -260,10 +277,9 @@ export default function VideoLibPage() {
                         return (
                           <Badge
                             key={g}
-                            variant={on ? "solid" : "outline"}
-                            colorScheme={on ? "blue" : "gray"}
+                            variant={on ? "solid" : "subtle"}
+                            colorScheme="blue"
                             cursor="pointer"
-                            fontWeight="bold"
                             onClick={() => toggleGenre(g)}
                             _hover={{ opacity: 0.9 }}
                           >
@@ -274,6 +290,7 @@ export default function VideoLibPage() {
                     )}
                   </Flex>
                 </Box>
+                {/* 标签：与 Detail 一致用 gray 基础色 */}
                 <Box>
                   <Text fontSize="xs" color="gray.500" mb={2}>
                     标签
@@ -290,9 +307,8 @@ export default function VideoLibPage() {
                           <Badge
                             key={t}
                             variant={on ? "solid" : "outline"}
-                            colorScheme={on ? "blue" : "gray"}
+                            colorScheme="gray"
                             cursor="pointer"
-                            fontWeight="normal"
                             onClick={() => toggleTag(t)}
                             _hover={{ opacity: 0.9 }}
                           >

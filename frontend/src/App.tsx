@@ -50,9 +50,6 @@ function Layout({ children }: { children: React.ReactNode }) {
           个人影音库
         </Heading>
         <Spacer />
-        <Button size="sm" onClick={toggleColorMode} mr={2}>
-          {colorMode === "light" ? "暗色" : "亮色"}
-        </Button>
         <Button size="sm" variant="outline" onClick={handleLogout}>
           退出
         </Button>

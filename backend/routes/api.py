@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional
 from urllib.parse import quote
 
 from flask import Blueprint, Response, jsonify, request, send_file
-from sqlalchemy import and_, exists
+from sqlalchemy import and_, exists, or_
 
 from ..config import config
 from ..models import Genre, MediaItem, Session as SessionModel, Tag, get_session, media_item_genres, media_item_tags
@@ -161,7 +161,7 @@ def get_filters():
 @api_bp.route("/items", methods=["GET"])
 @login_required
 def list_items():
-    """分页返回媒体列表，支持 q 按番号/标题搜索，genre/tag 多选过滤。"""
+    """分页返回媒体列表，支持 q 按番号/标题搜索，genre/tag 多选过滤；filter_mode: and=交集, or=并集。"""
     page = max(int(request.args.get("page", 1)), 1)
     page_size = min(max(int(request.args.get("page_size", 20)), 1), 100)
     search = (request.args.get("q") or "").strip()
@@ -169,12 +169,21 @@ def list_items():
     tags = request.args.getlist("tag") or request.args.getlist("tags") or []
     genres = [g.strip() for g in genres if g and g.strip()]
     tags = [t.strip() for t in tags if t and t.strip()]
+    filter_mode = (request.args.get("filter_mode") or "and").strip().lower()
+    if filter_mode not in ("and", "or"):
+        filter_mode = "and"
 
     db = get_session()
     try:
         query = db.query(MediaItem)
 
-        # 按 genre/tag 过滤（使用 exists 子查询确保 AND 关系）
+        # 按 genre/tag 过滤
+        # 交集(and)：类型需全部具备、标签需全部具备，且类型与标签同时满足
+        # 并集(or)：类型具备其一即可、标签具备其一即可，类型或标签满足其一即可
+        genre_condition_or = None   # 有任一选中类型即可
+        genre_condition_and = None # 有全部选中类型
+        tag_condition_or = None
+        tag_condition_and = None
         if genres:
             genre_objs = db.query(Genre).filter(Genre.name.in_(genres)).all()
             if not genre_objs:
@@ -186,17 +195,25 @@ def list_items():
                         "items": [],
                     }
                 )
-            # 需要至少包含一个选中的 genre（OR 关系）
             genre_ids = [g.id for g in genre_objs]
-            query = query.filter(
-                exists().where(
-                    and_(
-                        media_item_genres.c.media_item_id == MediaItem.id,
-                        media_item_genres.c.genre_id.in_(genre_ids),
-                    )
+            genre_condition_or = exists().where(
+                and_(
+                    media_item_genres.c.media_item_id == MediaItem.id,
+                    media_item_genres.c.genre_id.in_(genre_ids),
                 )
             )
-
+            # 交集：每个选中的类型都要存在
+            genre_condition_and = and_(
+                *[
+                    exists().where(
+                        and_(
+                            media_item_genres.c.media_item_id == MediaItem.id,
+                            media_item_genres.c.genre_id == gid,
+                        )
+                    )
+                    for gid in genre_ids
+                ]
+            )
         if tags:
             tag_objs = db.query(Tag).filter(Tag.name.in_(tags)).all()
             if not tag_objs:
@@ -208,16 +225,34 @@ def list_items():
                         "items": [],
                     }
                 )
-            # 需要至少包含一个选中的 tag（OR 关系），且与 genre 是 AND 关系
             tag_ids = [t.id for t in tag_objs]
-            query = query.filter(
-                exists().where(
-                    and_(
-                        media_item_tags.c.media_item_id == MediaItem.id,
-                        media_item_tags.c.tag_id.in_(tag_ids),
-                    )
+            tag_condition_or = exists().where(
+                and_(
+                    media_item_tags.c.media_item_id == MediaItem.id,
+                    media_item_tags.c.tag_id.in_(tag_ids),
                 )
             )
+            tag_condition_and = and_(
+                *[
+                    exists().where(
+                        and_(
+                            media_item_tags.c.media_item_id == MediaItem.id,
+                            media_item_tags.c.tag_id == tid,
+                        )
+                    )
+                    for tid in tag_ids
+                ]
+            )
+
+        if filter_mode == "or":
+            conds = [c for c in (genre_condition_or, tag_condition_or) if c is not None]
+            if conds:
+                query = query.filter(or_(*conds))
+        else:
+            if genre_condition_and is not None:
+                query = query.filter(genre_condition_and)
+            if tag_condition_and is not None:
+                query = query.filter(tag_condition_and)
 
         if search:
             like = f"%{search}%"
