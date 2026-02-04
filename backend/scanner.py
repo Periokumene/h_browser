@@ -19,6 +19,23 @@ from .models import MediaItem
 
 logger = logging.getLogger(__name__)
 
+# 模板文件名黑名单：这些文件名不应被当作番号处理
+_TEMPLATE_NFO_NAMES = {
+    "movie",
+    "template",
+    "sample",
+    "example",
+    "test",
+    "default",
+    "blank",
+}
+
+
+def _is_template_nfo(nfo_path: Path) -> bool:
+    """判断是否为模板 NFO 文件（如 movie.nfo、template.nfo），应跳过。"""
+    stem = nfo_path.stem.lower()
+    return stem in _TEMPLATE_NFO_NAMES
+
 
 def _parse_nfo(nfo_path: Path) -> tuple[Optional[str], Optional[str]]:
     """解析 NFO 文件，返回 (title, description)。
@@ -73,6 +90,11 @@ def scan_media(session, media_root: Optional[Path] = None) -> int:
         for nfo_name in nfo_files:
             nfo_path = dir_path / nfo_name
             code = nfo_path.stem  # 去掉扩展名
+
+            # 跳过模板文件（如 movie.nfo、template.nfo）
+            if _is_template_nfo(nfo_path):
+                logger.debug("跳过模板 NFO 文件: %s", nfo_path)
+                continue
 
             # 同一次扫描中，如出现相同番号的多个 NFO，仅处理第一条，避免唯一约束冲突
             if code in seen_codes:
