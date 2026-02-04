@@ -205,3 +205,28 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ========================
+# Project specific ignores
+# ========================
+
+# Backend: SQLite 数据库与 HLS 缓存（运行期生成，不需要入库）
+backend/media.db
+backend/hls_cache/
+
+# Backend: 可选的 FFmpeg 工具（若希望版本管理这些二进制，可删除下列规则）
+backend/tools/*/ffmpeg*
+backend/tools/*/ffprobe*
+backend/tools/*/ffplay*
+
+# Frontend: Node 依赖与构建产物
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# 通用杂项
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
