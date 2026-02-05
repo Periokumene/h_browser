@@ -47,9 +47,11 @@
 | `backend/routes/api.py` | 媒体列表/详情/扫描/流媒体 API 及登录校验装饰器 |
 | `backend/routes/auth.py` | 登录接口，签发 token 写入 sessions |
 | `frontend/` | Vite + React 前端 |
-| `frontend/src/api/client.ts` | Axios 实例、baseURL、Authorization 注入 |
-| `frontend/src/pages/` | 登录、列表、详情、播放页 |
-| `docs/` | 计划、API 文档等 |
+| `frontend/src/api/client.ts` | Axios 实例、getBaseUrl/getToken、baseURL、Authorization 注入 |
+| `frontend/src/api/calls.ts` | 接口薄封装：fetchItem、fetchItems、fetchFilters、postScan |
+| `frontend/src/types/api.ts` | 与后端一致的共享类型（MediaItem、MediaDetail、ListFilters 等） |
+| `frontend/src/pages/` | 登录、列表、详情、播放页（使用 TanStack Query + api/calls） |
+| `docs/` | 计划、API、前端架构等文档 |
 
 ---
 

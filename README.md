@@ -15,6 +15,7 @@
 |------|------|
 | [docs/PLAN_AND_ROADMAP.md](docs/PLAN_AND_ROADMAP.md) | 计划与路线图、架构、配置、阶段说明 |
 | [docs/API.md](docs/API.md) | 后端 API 文档（认证、接口、请求/响应） |
+| [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) | 前端架构与数据层（TanStack Query、api/calls、共享类型、Query Key） |
 | [docs/README.md](docs/README.md) | 文档索引 |
 
 代码说明见各模块 docstring（`backend/` 下）。

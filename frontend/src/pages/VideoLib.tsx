@@ -16,160 +16,74 @@ import {
   Text,
   useToast
 } from "@chakra-ui/react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiClient } from "../api/client";
-
-const getBaseUrl = () =>
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const getToken = () => localStorage.getItem("authToken");
+import { fetchFilters, fetchItems, postScan } from "../api/calls";
+import { getBaseUrl, getToken } from "../api/client";
+import type { FilterRuleMode, ListFilters, MediaItem } from "../types/api";
 
 const PAGE_SIZE = 24;
 
-/** 将 params 中数组序列化为重复 key（genre=a&genre=b）供后端 getlist 使用 */
-function serializeParams(params: Record<string, unknown>): string {
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null) continue;
-    if (Array.isArray(v)) {
-      v.forEach((vv) => parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(vv))}`));
-    } else {
-      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
-    }
-  }
-  return parts.join("&");
-}
-
-interface MediaItem {
-  code: string;
-  title?: string;
-  video_type?: string;
-  has_video: boolean;
-  poster_url?: string;
-}
-
-/** 过滤规则：交集 = 同时满足类型与标签；并集 = 满足类型或标签其一即可 */
-export type FilterRuleMode = "and" | "or";
-
-/** 可扩展的列表筛选/排序配置，便于后续新增规则（如排序） */
-export interface ListFilters {
-  genres: string[];
-  tags: string[];
-  filterMode: FilterRuleMode;
-  // sortBy?: string;
-  // sortOrder?: "asc" | "desc";
-}
-
-/** 从 ListFilters 生成列表 API 的 query params（便于扩展） */
-function filtersToParams(filters: ListFilters): Record<string, unknown> {
-  const params: Record<string, unknown> = {};
-  if (filters.genres?.length) params.genre = filters.genres;
-  if (filters.tags?.length) params.tag = filters.tags;
-  params.filter_mode = filters.filterMode;
-  // if (filters.sortBy) params.sort_by = filters.sortBy;
-  // if (filters.sortOrder) params.sort_order = filters.sortOrder;
-  return params;
-}
-
-interface FilterOptions {
-  genres: string[];
-  tags: string[];
-}
+export type { FilterRuleMode, ListFilters };
 
 export default function VideoLibPage() {
-  const [items, setItems] = useState<MediaItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
-  const [nextPage, setNextPage] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ genres: [], tags: [] });
+  const [searchSubmitted, setSearchSubmitted] = useState("");
   const [filters, setFilters] = useState<ListFilters>({ genres: [], tags: [], filterMode: "and" });
   const isFirstFilterMount = useRef(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const loadPage = useCallback(
-    async (
-      pageNumber: number,
-      keyword: string,
-      append: boolean,
-      filterState: ListFilters
-    ) => {
-      if (append) setLoadingMore(true);
-      else setLoading(true);
-      try {
-        const params: Record<string, unknown> = {
-          page: pageNumber,
-          page_size: PAGE_SIZE,
-          q: keyword || undefined,
-          ...filtersToParams(filterState),
-        };
-        const res = await apiClient.get("/api/items", {
-          params,
-          paramsSerializer: (p: Record<string, unknown>) => serializeParams(p),
-        });
-        const list = res.data.items as MediaItem[];
-        const totalCount = res.data.total as number;
-        setTotal(totalCount);
-        if (append) {
-          setItems((prev) => {
-            const codes = new Set(prev.map((i) => i.code));
-            const added = list.filter((i) => !codes.has(i.code));
-            return prev.concat(added);
-          });
-        } else {
-          setItems(list);
-        }
-        setNextPage(pageNumber + 1);
-        setHasMore(list.length === PAGE_SIZE && items.length + list.length < totalCount);
-      } catch (err: any) {
-        const msg = err?.response?.data?.error || "加载列表失败";
-        toast({ title: msg, status: "error" });
-      } finally {
-        if (append) setLoadingMore(false);
-        else setLoading(false);
-      }
+  const { data: filterOptions = { genres: [], tags: [] } } = useQuery({
+    queryKey: ["filters"],
+    queryFn: fetchFilters,
+  });
+
+  const {
+    data,
+    isLoading: loading,
+    isFetchingNextPage: loadingMore,
+    hasNextPage: hasMore,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["items", searchSubmitted, filters],
+    queryFn: ({ pageParam }) =>
+      fetchItems({
+        page: pageParam,
+        page_size: PAGE_SIZE,
+        q: searchSubmitted || undefined,
+        filters,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
+      if (loaded >= lastPage.total) return undefined;
+      return allPages.length + 1;
     },
-    [toast]
-  );
+  });
 
-  const loadInitial = useCallback(() => {
-    setNextPage(1);
-    setHasMore(true);
-    loadPage(1, search, false, filters);
-  }, [search, filters, loadPage]);
+  const scanMutation = useMutation({
+    mutationFn: postScan,
+    onSuccess: (res) => {
+      toast({ title: "扫描完成", description: `本次处理 ${res.processed} 条记录`, status: "success" });
+      queryClient.invalidateQueries({ queryKey: ["filters"] });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      toast({ title: err?.response?.data?.error || "触发扫描失败", status: "error" });
+    },
+  });
 
-  useEffect(() => {
-    loadInitial();
-  }, []);
-
-  // 任何过滤项或规则变化都立即刷新列表（不依赖浮窗关闭）
-  useEffect(() => {
-    if (isFirstFilterMount.current) {
-      isFirstFilterMount.current = false;
-      return;
-    }
-    setNextPage(1);
-    setHasMore(true);
-    loadPage(1, search, false, filters);
-  }, [filters]);
+  const items = data?.pages.flatMap((p) => p.items) ?? [];
+  const total = data?.pages[0]?.total ?? 0;
 
   const loadMore = useCallback(() => {
-    if (loading || loadingMore || !hasMore) return;
-    loadPage(nextPage, search, true, filters);
-  }, [loading, loadingMore, hasMore, nextPage, search, filters, loadPage]);
+    if (!loading && !loadingMore && hasMore) fetchNextPage();
+  }, [loading, loadingMore, hasMore, fetchNextPage]);
 
-  useEffect(() => {
-    apiClient
-      .get<{ genres: string[]; tags: string[] }>("/api/filters")
-      .then((res) => setFilterOptions({ genres: res.data.genres || [], tags: res.data.tags || [] }))
-      .catch(() => {});
-  }, []);
-
-  // 滚动到底部时加载更多
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
@@ -183,38 +97,31 @@ export default function VideoLibPage() {
     return () => observer.disconnect();
   }, [loadMore]);
 
-  const handleScan = async () => {
-    try {
-      const res = await apiClient.post("/api/scan");
-      toast({
-        title: "扫描完成",
-        description: `本次处理 ${res.data.processed} 条记录`,
-        status: "success"
-      });
-      const filterRes = await apiClient.get<{ genres: string[]; tags: string[] }>("/api/filters");
-      setFilterOptions({ genres: filterRes.data.genres || [], tags: filterRes.data.tags || [] });
-      loadInitial();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || "触发扫描失败";
-      toast({ title: msg, status: "error" });
+  const loadInitial = () => {
+    setSearchSubmitted(search);
+  };
+
+  const handleFilterChange = (next: ListFilters) => {
+    setFilters(next);
+    if (isFirstFilterMount.current) {
+      isFirstFilterMount.current = false;
     }
   };
 
   const toggleGenre = (g: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      genres: prev.genres.includes(g) ? prev.genres.filter((x) => x !== g) : [...prev.genres, g],
-    }));
+    handleFilterChange({
+      ...filters,
+      genres: filters.genres.includes(g) ? filters.genres.filter((x) => x !== g) : [...filters.genres, g],
+    });
   };
   const toggleTag = (t: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      tags: prev.tags.includes(t) ? prev.tags.filter((x) => x !== t) : [...prev.tags, t],
-    }));
+    handleFilterChange({
+      ...filters,
+      tags: filters.tags.includes(t) ? filters.tags.filter((x) => x !== t) : [...filters.tags, t],
+    });
   };
-
   const setFilterMode = (mode: FilterRuleMode) => {
-    setFilters((prev) => ({ ...prev, filterMode: mode }));
+    handleFilterChange({ ...filters, filterMode: mode });
   };
 
   const hasActiveFilters = filters.genres.length > 0 || filters.tags.length > 0;
@@ -222,12 +129,11 @@ export default function VideoLibPage() {
   return (
     <Stack spacing={4}>
       <Flex align="center" gap={4} flexWrap="wrap">
-        <Button size="sm" onClick={handleScan}>
+        <Button size="sm" onClick={() => scanMutation.mutate()} isDisabled={scanMutation.isPending}>
           刷新库（扫描）
         </Button>
         <Box flex="1" />
 
-        {/* 单一过滤器按钮：点击弹出浮窗，Badge 切换启用，任意修改即刷新 */}
         <Popover placement="bottom-start" closeOnBlur>
           <PopoverTrigger>
             <Button
@@ -242,7 +148,6 @@ export default function VideoLibPage() {
           <PopoverContent w="auto" minW="280px" maxW="400px" _focus={{ outline: 0 }}>
             <PopoverBody>
               <Stack spacing={4}>
-                {/* 交集 / 并集 */}
                 <Flex align="center" gap={2}>
                   <Button
                     size="xs"
@@ -261,7 +166,6 @@ export default function VideoLibPage() {
                     并集
                   </Button>
                 </Flex>
-                {/* 类型：温馨主色 */}
                 <Box>
                   <Text fontSize="xs" color="app.muted" mb={2}>
                     类型
@@ -272,25 +176,21 @@ export default function VideoLibPage() {
                         暂无（请先扫描）
                       </Text>
                     ) : (
-                      filterOptions.genres.map((g) => {
-                        const on = filters.genres.includes(g);
-                        return (
-                          <Badge
-                            key={g}
-                            variant={on ? "solid" : "subtle"}
-                            colorScheme="orange"
-                            cursor="pointer"
-                            onClick={() => toggleGenre(g)}
-                            _hover={{ opacity: 0.9 }}
-                          >
-                            {g}
-                          </Badge>
-                        );
-                      })
+                      filterOptions.genres.map((g) => (
+                        <Badge
+                          key={g}
+                          variant={filters.genres.includes(g) ? "solid" : "subtle"}
+                          colorScheme="orange"
+                          cursor="pointer"
+                          onClick={() => toggleGenre(g)}
+                          _hover={{ opacity: 0.9 }}
+                        >
+                          {g}
+                        </Badge>
+                      ))
                     )}
                   </Flex>
                 </Box>
-                {/* 标签：中性色 */}
                 <Box>
                   <Text fontSize="xs" color="app.muted" mb={2}>
                     标签
@@ -301,21 +201,18 @@ export default function VideoLibPage() {
                         暂无（请先扫描）
                       </Text>
                     ) : (
-                      filterOptions.tags.map((t) => {
-                        const on = filters.tags.includes(t);
-                        return (
-                          <Badge
-                            key={t}
-                            variant={on ? "solid" : "outline"}
-                            colorScheme="gray"
-                            cursor="pointer"
-                            onClick={() => toggleTag(t)}
-                            _hover={{ opacity: 0.9 }}
-                          >
-                            {t}
-                          </Badge>
-                        );
-                      })
+                      filterOptions.tags.map((t) => (
+                        <Badge
+                          key={t}
+                          variant={filters.tags.includes(t) ? "solid" : "outline"}
+                          colorScheme="gray"
+                          cursor="pointer"
+                          onClick={() => toggleTag(t)}
+                          _hover={{ opacity: 0.9 }}
+                        >
+                          {t}
+                        </Badge>
+                      ))
                     )}
                   </Flex>
                 </Box>
@@ -348,7 +245,7 @@ export default function VideoLibPage() {
             justifyItems="center"
             sx={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, min(320px, 26vw)))" }}
           >
-            {items.map((item) => {
+            {items.map((item: MediaItem) => {
               const token = getToken();
               const posterUrl = item.poster_url
                 ? `${getBaseUrl()}${item.poster_url}${token ? `?token=${encodeURIComponent(token)}` : ""}`
@@ -431,7 +328,6 @@ export default function VideoLibPage() {
             })}
           </SimpleGrid>
 
-          {/* 底部哨兵：进入视口时触发加载更多 */}
           <Box ref={sentinelRef} h="1px" w="100%" aria-hidden />
 
           <Flex align="center" justify="center" py={4} gap={2}>

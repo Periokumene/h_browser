@@ -9,49 +9,14 @@ import {
   Skeleton,
   Stack,
   Text,
-  useToast,
   Wrap,
   WrapItem
 } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
-import { apiClient } from "../api/client";
-
-const getBaseUrl = () =>
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-const getToken = () => localStorage.getItem("authToken");
-
-interface Actor {
-  name: string;
-  role?: string;
-  thumb?: string | null;
-}
-
-interface Metadata {
-  rating?: number | null;
-  userrating?: number | null;
-  votes?: number | null;
-  year?: number | null;
-  premiered?: string | null;
-  runtime?: number | null;
-  genres?: string[];
-  tags?: string[];
-  country?: string | null;
-  director?: string | null;
-  studio?: string | null;
-  actors?: Actor[];
-  outline?: string | null;
-}
-
-interface MediaDetail {
-  code: string;
-  title?: string | null;
-  description?: string | null;
-  video_type?: string | null;
-  has_video: boolean;
-  poster_url?: string;
-  metadata?: Metadata;
-}
+import { fetchItem } from "../api/calls";
+import { getBaseUrl, getToken } from "../api/client";
+import type { MediaDetail } from "../types/api";
 
 function MetaLine({
   label,
@@ -76,26 +41,13 @@ function MetaLine({
 
 export default function DetailPage() {
   const { code } = useParams<{ code: string }>();
-  const [item, setItem] = useState<MediaDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const toast = useToast();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const res = await apiClient.get(`/api/items/${encodeURIComponent(code || "")}`);
-        setItem(res.data);
-      } catch (err: any) {
-        const msg = err?.response?.data?.error || "加载详情失败";
-        toast({ title: msg, status: "error" });
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (code) load();
-  }, [code, toast]);
+  const { data: item, isLoading: loading, isError, error } = useQuery({
+    queryKey: ["item", code],
+    queryFn: () => fetchItem(code!),
+    enabled: !!code,
+  });
 
   if (loading) {
     return (
@@ -112,19 +64,23 @@ export default function DetailPage() {
     );
   }
 
-  if (!item) {
+  if (!code || (!loading && !item)) {
+    const msg = isError && error
+      ? (error as { response?: { data?: { error?: string } } })?.response?.data?.error || "加载详情失败"
+      : "加载失败或条目不存在";
     return (
       <Box>
-        <Text>加载失败或条目不存在</Text>
+        <Text>{msg}</Text>
       </Box>
     );
   }
 
+  const detail = item as MediaDetail;
   const token = getToken();
-  const posterUrl = item.poster_url
-    ? `${getBaseUrl()}${item.poster_url}${token ? `?token=${encodeURIComponent(token)}` : ""}`
+  const posterUrl = detail.poster_url
+    ? `${getBaseUrl()}${detail.poster_url}${token ? `?token=${encodeURIComponent(token)}` : ""}`
     : undefined;
-  const meta = item.metadata;
+  const meta = detail.metadata;
 
   return (
     <Stack spacing={6}>
@@ -148,7 +104,7 @@ export default function DetailPage() {
             {posterUrl ? (
               <Image
                 src={posterUrl}
-                alt={item.title || item.code}
+                alt={detail.title || detail.code}
                 objectFit="cover"
                 w="100%"
                 h="100%"
@@ -173,19 +129,19 @@ export default function DetailPage() {
         {/* 右侧信息 */}
         <Stack spacing={4} flex={1} minW={0}>
           <Heading size="lg" noOfLines={2}>
-            {item.title || item.code}
+            {detail.title || detail.code}
           </Heading>
           <Flex align="center" gap={2} flexWrap="wrap">
             <Text fontSize="sm" color="app.muted">
-              番号：{item.code}
+              番号：{detail.code}
             </Text>
-            {item.has_video ? (
+            {detail.has_video ? (
               <Badge colorScheme="green">有视频</Badge>
             ) : (
               <Badge colorScheme="red">无视频</Badge>
             )}
-            {item.video_type && (
-              <Badge variant="outline" colorScheme="gray">{item.video_type}</Badge>
+            {detail.video_type && (
+              <Badge variant="outline" colorScheme="gray">{detail.video_type}</Badge>
             )}
           </Flex>
 
@@ -241,8 +197,8 @@ export default function DetailPage() {
           <Button
             colorScheme="orange"
             size="lg"
-            isDisabled={!item.has_video}
-            onClick={() => navigate(`/play/${encodeURIComponent(item.code)}`)}
+            isDisabled={!detail.has_video}
+            onClick={() => navigate(`/play/${encodeURIComponent(detail.code)}`)}
           >
             播放
           </Button>
