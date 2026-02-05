@@ -1,7 +1,6 @@
 import {
   Badge,
   Box,
-  Button,
   Flex,
   Heading,
   Image,
@@ -90,7 +89,7 @@ export default function DetailPage() {
         align="flex-start"
         flexWrap="nowrap"
       >
-        {/* 海报 */}
+        {/* 海报：悬停缩放 + 播放图标，点击跳转播放页 */}
         <Box
           w={{ base: "100%", md: "min(280px, 26vw)" }}
           maxW="320px"
@@ -99,10 +98,31 @@ export default function DetailPage() {
           overflow="hidden"
           bg="app.surface"
           boxShadow="lg"
+          position="relative"
+          cursor={detail.has_video ? "pointer" : "default"}
+          onClick={() => detail.has_video && navigate(`/play/${encodeURIComponent(detail.code)}`)}
+          role={detail.has_video ? "button" : undefined}
+          aria-label={detail.has_video ? "播放" : undefined}
+          sx={{
+            "& .poster-img": {
+              transition: "transform 0.3s ease",
+            },
+            ...(detail.has_video && {
+              "&:hover .poster-img": { transform: "scale(1.05)" },
+            }),
+            "& .play-overlay": {
+              opacity: 0,
+              transition: "opacity 0.2s ease",
+            },
+            ...(detail.has_video && {
+              "&:hover .play-overlay": { opacity: 1 },
+            }),
+          }}
         >
           <Box aspectRatio={2 / 3} position="relative">
             {posterUrl ? (
               <Image
+                className="poster-img"
                 src={posterUrl}
                 alt={detail.title || detail.code}
                 objectFit="cover"
@@ -121,6 +141,32 @@ export default function DetailPage() {
                 fontSize="sm"
               >
                 无海报
+              </Flex>
+            )}
+            {detail.has_video && (
+              <Flex
+                className="play-overlay"
+                position="absolute"
+                inset={0}
+                align="center"
+                justify="center"
+                bg="blackAlpha.65"
+                pointerEvents="none"
+              >
+                <Flex
+                  w="24"
+                  h="24"
+                  borderRadius="full"
+                  bg="app.accent"
+                  color="app.accent.fg"
+                  align="center"
+                  justify="center"
+                  fontSize="5xl"
+                  pl="8px"
+                  boxShadow="xl"
+                >
+                  ▶
+                </Flex>
               </Flex>
             )}
           </Box>
@@ -166,24 +212,38 @@ export default function DetailPage() {
           <MetaLine label="导演" value={meta?.director} />
           <MetaLine label="制片" value={meta?.studio} />
 
-          {/* 类型、标签 */}
-          {(meta?.genres?.length || meta?.tags?.length) ? (
-            <Wrap spacing={2}>
-              {meta?.genres?.map((g) => (
-                <WrapItem key={g}>
-                  <Badge colorScheme="orange" variant="subtle">
-                    {g}
-                  </Badge>
-                </WrapItem>
-              ))}
-              {meta?.tags?.map((t) => (
-                <WrapItem key={t}>
-                  <Badge variant="outline" colorScheme="gray">
-                    {t}
-                  </Badge>
-                </WrapItem>
-              ))}
-            </Wrap>
+          {/* 类型、标签：分两行 */}
+          {meta?.genres?.length ? (
+            <Box>
+              <Text fontSize="xs" color="app.muted" mb={2}>
+                类型
+              </Text>
+              <Wrap spacing={2}>
+                {meta.genres.map((g) => (
+                  <WrapItem key={g}>
+                    <Badge colorScheme="orange" variant="subtle">
+                      {g}
+                    </Badge>
+                  </WrapItem>
+                ))}
+              </Wrap>
+            </Box>
+          ) : null}
+          {meta?.tags?.length ? (
+            <Box>
+              <Text fontSize="xs" color="app.muted" mb={2}>
+                标签
+              </Text>
+              <Wrap spacing={2}>
+                {meta.tags.map((t) => (
+                  <WrapItem key={t}>
+                    <Badge variant="outline" colorScheme="gray">
+                      {t}
+                    </Badge>
+                  </WrapItem>
+                ))}
+              </Wrap>
+            </Box>
           ) : null}
 
           {/* 简短概述 */}
@@ -192,16 +252,6 @@ export default function DetailPage() {
               {meta.outline}
             </Text>
           )}
-
-          {/* 播放按钮 */}
-          <Button
-            colorScheme="orange"
-            size="lg"
-            isDisabled={!detail.has_video}
-            onClick={() => navigate(`/play/${encodeURIComponent(detail.code)}`)}
-          >
-            播放
-          </Button>
         </Stack>
       </Flex>
 
