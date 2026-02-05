@@ -22,7 +22,11 @@ from sqlalchemy import and_, exists, or_
 from ..config import config
 from ..models import Genre, MediaItem, Session as SessionModel, Tag, get_session, media_item_genres, media_item_tags
 from ..scanner import scan_media
-from ..services.metadata import get_poster_path, parse_nfo
+from ..services.media_service import (
+    get_item_by_code,
+    get_item_full_metadata,
+    get_poster_path_for_item,
+)
 
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -295,14 +299,13 @@ def get_item(code: str):
     """根据番号返回单条媒体详情（标题、简介、是否有视频等）。"""
     db = get_session()
     try:
-        item = db.query(MediaItem).filter(MediaItem.code == code).one_or_none()
-        if item is None:
+        full = get_item_full_metadata(db, code)
+        if not full or not full["db_item"]:
             return jsonify({"error": "未找到媒体条目"}), 404
 
-        nfo_path = Path(item.nfo_path) if item.nfo_path else None
-        metadata = None
-        if nfo_path and nfo_path.exists():
-            metadata = parse_nfo(nfo_path)
+        item = full["db_item"]
+        metadata = full["nfo_metadata"]
+
         payload = {
             "code": item.code,
             "title": item.title,
@@ -340,16 +343,14 @@ def get_item_poster(code: str) -> Response:
         return jsonify({"error": "未提供令牌或令牌无效"}), 401
     db = get_session()
     try:
-        item = db.query(MediaItem).filter(MediaItem.code == code).one_or_none()
+        item = get_item_by_code(db, code)
         if item is None:
             return jsonify({"error": "未找到媒体条目"}), 404
-        nfo_path = Path(item.nfo_path) if item.nfo_path else None
-        if not nfo_path or not nfo_path.exists():
-            return jsonify({"error": "无 NFO 或文件不存在"}), 404
-        metadata = parse_nfo(nfo_path)
-        poster_path = get_poster_path(nfo_path, code, metadata)
+
+        poster_path = get_poster_path_for_item(db, code)
         if poster_path is None or not poster_path.exists():
             return jsonify({"error": "未找到海报图"}), 404
+
         suffix = poster_path.suffix.lower()
         mimetypes = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
         mimetype = mimetypes.get(suffix, "image/jpeg")
@@ -408,7 +409,7 @@ def stream_video(code: str) -> Response:
 
     db = get_session()
     try:
-        item = db.query(MediaItem).filter(MediaItem.code == code).one_or_none()
+        item = get_item_by_code(db, code)
         if item is None or not item.video_path:
             return jsonify({"error": "未找到对应视频文件"}), 404
 
@@ -437,7 +438,7 @@ def stream_playlist_m3u8(code: str) -> Response:
 
     db = get_session()
     try:
-        item = db.query(MediaItem).filter(MediaItem.code == code).one_or_none()
+        item = get_item_by_code(db, code)
         if item is None or not item.video_path:
             return jsonify({"error": "未找到对应视频文件"}), 404
         if not (item.video_path or "").lower().endswith(".ts"):
