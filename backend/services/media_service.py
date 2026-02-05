@@ -132,7 +132,8 @@ def create_or_update_item(
     is_new = item is None
 
     if item is None:
-        item = MediaItem(code=code)
+        # 新建时必填字段须在 flush 前设置，否则 INSERT 触发 NOT NULL 约束失败
+        item = MediaItem(code=code, nfo_path=str(nfo_path))
         session.add(item)
         session.flush()  # 确保新 item 有 ID，才能操作关联关系
 
