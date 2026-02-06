@@ -6,6 +6,7 @@ import WelcomePage from "./pages/Welcome";
 import VideoLibPage from "./pages/VideoLib";
 import DetailPage from "./pages/Detail";
 import PlayPage from "./pages/Play";
+import MediaLibraryConfigPage from "./pages/MediaLibraryConfig";
 
 function Layout({ children }: { children: React.ReactNode }) {
   const bg = useColorModeValue("gray.50", warmNeutrals.bg);
@@ -27,6 +28,7 @@ export default function App() {
       <Route path="/videolib" element={<Layout><VideoLibPage /></Layout>} />
       <Route path="/detail/:code" element={<Layout><DetailPage /></Layout>} />
       <Route path="/play/:code" element={<Layout><PlayPage /></Layout>} />
+      <Route path="/config/media" element={<Layout><MediaLibraryConfigPage /></Layout>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

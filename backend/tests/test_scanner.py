@@ -41,7 +41,7 @@ def test_skip_movie_nfo_template(clean_db):
 
         db = get_session()
         try:
-            count = scan_media(db, media_root=media_root)
+            count = scan_media(db, media_roots=[str(media_root)])
             assert count == 1  # 只处理 SSNI-124，跳过 movie.nfo
             
             items = db.query(MediaItem).all()
@@ -70,7 +70,7 @@ def test_skip_multiple_template_files(clean_db):
 
         db = get_session()
         try:
-            count = scan_media(db, media_root=media_root)
+            count = scan_media(db, media_roots=[str(media_root)])
             assert count == 1
             
             items = db.query(MediaItem).all()

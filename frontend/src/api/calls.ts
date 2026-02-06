@@ -60,3 +60,17 @@ export async function postScan(): Promise<{ processed: number }> {
   const res = await apiClient.post<{ processed: number }>("/api/scan");
   return res.data;
 }
+
+export interface MediaLibraryConfig {
+  media_roots: string[];
+}
+
+export async function fetchConfig(): Promise<MediaLibraryConfig> {
+  const res = await apiClient.get<MediaLibraryConfig>("/api/config");
+  return res.data;
+}
+
+export async function updateConfig(payload: Partial<MediaLibraryConfig>): Promise<MediaLibraryConfig> {
+  const res = await apiClient.put<MediaLibraryConfig>("/api/config", payload);
+  return res.data;
+}

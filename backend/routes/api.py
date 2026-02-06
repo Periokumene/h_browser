@@ -27,6 +27,28 @@ from ..services.media_service import (
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 
+@api_bp.route("/config", methods=["GET"])
+def get_config():
+    """返回媒体库配置。与前端约定：始终返回 { "media_roots": string[] }，与 config 文件一致。"""
+    return jsonify({"media_roots": config.media_roots})
+
+
+@api_bp.route("/config", methods=["PUT"])
+def update_config():
+    """更新媒体库路径并写回文件，触发变更回调。"""
+    data = request.get_json(silent=True) or {}
+    media_roots = data.get("media_roots")
+    if media_roots is not None and not isinstance(media_roots, list):
+        return jsonify({"error": "media_roots 须为数组"}), 400
+    if media_roots is not None and not all(isinstance(x, str) for x in media_roots):
+        return jsonify({"error": "media_roots 元素须为字符串"}), 400
+    try:
+        config.update(media_roots=media_roots if media_roots is not None else None)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"media_roots": config.media_roots})
+
+
 @api_bp.route("/filters", methods=["GET"])
 def get_filters():
     """返回高级筛选可选值：从数据库查询所有 genre 与 tag。"""
@@ -236,11 +258,11 @@ def get_item_poster(code: str) -> Response:
 
 @api_bp.route("/scan", methods=["POST"])
 def trigger_scan():
-    """手动触发一次全量媒体扫描（config.MEDIA_ROOT），返回本次处理的条目数。"""
+    """手动触发一次全量媒体扫描（config.media_roots），返回本次处理的条目数。"""
     logger = logging.getLogger(__name__)
     db = get_session()
     try:
-        count = scan_media(db, media_root=config.MEDIA_ROOT)
+        count = scan_media(db)
         return jsonify({"processed": count})
     except Exception as exc:
         logger.exception("扫描失败")

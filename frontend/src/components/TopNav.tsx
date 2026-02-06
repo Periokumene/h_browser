@@ -17,9 +17,9 @@ function TopNav() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const settingsEntries = [
-    { id: "media", label: "媒体库配置" },
-    { id: "metadata", label: "元数据管理" },
-    { id: "dev", label: "开发者模式" },
+    { id: "media", label: "媒体库配置", path: "/config/media" },
+    { id: "metadata", label: "元数据管理", path: null },
+    { id: "dev", label: "开发者模式", path: null },
   ] as const;
 
   return (
@@ -62,7 +62,7 @@ function TopNav() {
         title="设置"
       >
         <VStack align="stretch" spacing={0} py={2}>
-          {settingsEntries.map(({ id, label }) => (
+          {settingsEntries.map(({ id, label, path }) => (
             <Button
               key={id}
               variant="ghost"
@@ -73,7 +73,10 @@ function TopNav() {
               px={4}
               _hover={{ bg: menuHoverBg }}
               onClick={() => {
-                // 具体行为待定，可后续接入路由或弹窗
+                if (path) {
+                  setSettingsOpen(false);
+                  navigate(path);
+                }
               }}
             >
               {label}

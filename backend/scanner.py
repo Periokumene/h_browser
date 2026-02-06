@@ -1,8 +1,9 @@
-"""媒体库扫描：遍历 MEDIA_ROOT，收集 .nfo、解析元数据、匹配同目录 .mp4/.ts，写入 media_items。
+"""媒体库扫描：遍历多个媒体库路径，收集 .nfo、解析元数据、匹配同目录 .mp4/.ts，统一写入同一 media.db。
 
 - 以 .nfo 文件名为番号（code），同目录下 {code}.mp4 或 {code}.ts 为视频
 - 使用 media_service 统一的数据访问层进行磁盘扫描与数据库同步
-- 同一次扫描内相同番号只保留第一次出现的 NFO，避免 UNIQUE 冲突
+- 不存在的媒体库路径会跳过（容错），不引起错误
+- 番号重复时（同一扫描内或跨路径）只保留第一次出现的 NFO
 """
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
 import logging
 
 from .config import config
@@ -35,23 +37,9 @@ def _is_template_nfo(nfo_path: Path) -> bool:
     return stem in _TEMPLATE_NFO_NAMES
 
 
-def scan_media(session, media_root: Optional[Path] = None) -> int:
-    """扫描媒体目录，将 NFO + 视频信息写入数据库。
-
-    返回本次扫描处理的条目数量。
-    """
-    if media_root is None:
-        media_root = config.MEDIA_ROOT
-
-    media_root = Path(media_root).resolve()
-    if not media_root.exists():
-        logger.warning("媒体根目录不存在: %s", media_root)
-        return 0
-
+def _scan_one_root(session, media_root: Path, now: datetime, seen_codes: set[str]) -> int:
+    """扫描单个媒体根目录，将 NFO + 视频信息写入当前 session。返回本路径处理条数。"""
     processed = 0
-    now = datetime.now(timezone.utc)
-    seen_codes: set[str] = set()
-
     for dirpath, _dirnames, filenames in os.walk(media_root):
         dir_path = Path(dirpath)
         nfo_files = [f for f in filenames if f.lower().endswith(".nfo")]
@@ -60,27 +48,49 @@ def scan_media(session, media_root: Optional[Path] = None) -> int:
 
         for nfo_name in nfo_files:
             nfo_path = dir_path / nfo_name
-            code = nfo_path.stem  # 去掉扩展名
+            code = nfo_path.stem
 
-            # 跳过模板文件（如 movie.nfo、template.nfo）
             if _is_template_nfo(nfo_path):
                 logger.debug("跳过模板 NFO 文件: %s", nfo_path)
                 continue
 
-            # 同一次扫描中，如出现相同番号的多个 NFO，仅处理第一条，避免唯一约束冲突
             if code in seen_codes:
                 logger.info("检测到重复番号 %s，跳过后续 NFO：%s", code, nfo_path)
                 continue
             seen_codes.add(code)
 
-            # 使用统一的服务层同步磁盘到数据库
             try:
                 sync_item_from_disk(session, code, nfo_path, last_scanned_at=now)
                 processed += 1
             except Exception as exc:  # noqa: BLE001
                 logger.warning("同步媒体条目失败 %s: %s", nfo_path, exc)
 
-    session.commit()
-    logger.info("扫描完成，共处理 %s 条媒体记录", processed)
     return processed
+
+
+def scan_media(session, media_roots: Optional[list[str | Path]] = None) -> int:
+    """扫描媒体目录（可多个），将 NFO + 视频信息统一写入数据库。
+
+    - media_roots 为 None 时使用 config.media_roots
+    - 不存在的路径会记录警告并跳过，不抛错
+    - 番号重复时只保留第一次出现的条目
+    返回本次扫描处理的条目总数。
+    """
+    if media_roots is None:
+        media_roots = config.media_roots
+
+    now = datetime.now(timezone.utc)
+    seen_codes: set[str] = set()
+    total = 0
+
+    for raw in media_roots:
+        root = Path(raw).resolve()
+        if not root.exists():
+            logger.warning("媒体库路径不存在，已跳过: %s", root)
+            continue
+        total += _scan_one_root(session, root, now, seen_codes)
+
+    session.commit()
+    logger.info("扫描完成，共处理 %s 条媒体记录", total)
+    return total
 

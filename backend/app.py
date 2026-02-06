@@ -45,11 +45,11 @@ def create_app() -> Flask:
 
 
 def _run_initial_scan() -> None:
-    """使用 config.MEDIA_ROOT 执行一次全量媒体扫描并写入数据库。"""
+    """使用 config.media_roots 执行一次全量媒体扫描并写入数据库。"""
     logging.getLogger(__name__).info("启动时执行初次扫描...")
     db = get_session()
     try:
-        scan_media(db, media_root=config.MEDIA_ROOT)
+        scan_media(db)
     finally:
         db.close()
 
