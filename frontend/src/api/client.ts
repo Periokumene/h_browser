@@ -7,23 +7,8 @@ export function getBaseUrl(): string {
   return baseURL;
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem("authToken");
-}
-
 export const apiClient = axios.create({
   baseURL,
   withCredentials: false
-});
-
-apiClient.interceptors.request.use((config) => {
-  const token = getToken();
-  if (token) {
-    config.headers = {
-      ...config.headers,
-      Authorization: `Bearer ${token}`
-    };
-  }
-  return config;
 });
 

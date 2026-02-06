@@ -14,7 +14,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchItem } from "../api/calls";
-import { getBaseUrl, getToken } from "../api/client";
+import { getBaseUrl } from "../api/client";
 import type { MediaDetail } from "../types/api";
 
 function MetaLine({
@@ -75,9 +75,8 @@ export default function DetailPage() {
   }
 
   const detail = item as MediaDetail;
-  const token = getToken();
   const posterUrl = detail.poster_url
-    ? `${getBaseUrl()}${detail.poster_url}${token ? `?token=${encodeURIComponent(token)}` : ""}`
+    ? `${getBaseUrl()}${detail.poster_url}`
     : undefined;
   const meta = detail.metadata;
 

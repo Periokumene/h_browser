@@ -1,6 +1,5 @@
-"""媒体与流媒体 API 及认证装饰器。
+"""媒体与流媒体 API。
 
-- 认证：从 Authorization Bearer 或 X-Auth-Token 取 token，与 sessions 表校验；过期判断兼容 SQLite 多环境 datetime
 - GET /api/items：分页列表，支持 q 搜索
 - GET /api/items/<code>：单条详情
 - POST /api/scan：触发全量扫描
@@ -9,18 +8,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional
-
-from urllib.parse import quote
+from typing import Optional
 
 from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import and_, exists, or_
 
 from ..config import config
-from ..models import Genre, MediaItem, Session as SessionModel, Tag, get_session, media_item_genres, media_item_tags
+from ..models import Genre, MediaItem, Tag, get_session, media_item_genres, media_item_tags
 from ..scanner import scan_media
 from ..services.media_service import (
     get_item_by_code,
@@ -32,122 +27,7 @@ from ..services.media_service import (
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 
-def _utc_aware_now() -> datetime:
-    """当前 UTC 时间（timezone-aware），便于与 DB 返回值统一比较。"""
-    return datetime.now(timezone.utc)
-
-
-def _normalize_to_utc_aware(value: Any) -> Optional[datetime]:
-    """将 SQLite 可能返回的 datetime/date/str 规范为 timezone-aware UTC datetime。
-
-    SQLite 在不同环境下可能返回 naive datetime、字符串或 date，
-    此处统一为 aware datetime，无法解析时返回 None。
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        if value.tzinfo is not None:
-            return value.astimezone(timezone.utc)
-        return value.replace(tzinfo=timezone.utc)
-    if isinstance(value, str):
-        try:
-            # ISO 格式或常见格式
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(timezone.utc)
-        except (ValueError, TypeError):
-            return None
-    # date 或其它类型视为当天 0 点 UTC
-    try:
-        from datetime import date
-        if isinstance(value, date) and not isinstance(value, datetime):
-            return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
-    except Exception:
-        pass
-    return None
-
-
-def _is_session_expired(expires_at: Any) -> bool:
-    """判断会话是否已过期。任何无法正确比较的情况均视为已过期（安全优先）。"""
-    now = _utc_aware_now()
-    try:
-        exp = _normalize_to_utc_aware(expires_at)
-        if exp is None:
-            return True
-        return exp <= now
-    except (TypeError, ValueError, AttributeError):
-        return True
-
-
-def _get_token_from_request(allow_query: bool = False) -> Optional[str]:
-    """从请求中读取 token：优先 Authorization: Bearer，其次 X-Auth-Token；若 allow_query 为 True 则再尝试 query 参数 token（供 <video> 等无法带 Header 的场景）。"""
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.lower().startswith("bearer "):
-        return auth_header[7:].strip()
-    token = request.headers.get("X-Auth-Token")
-    if token:
-        return token.strip()
-    if allow_query:
-        token = request.args.get("token")
-        if token:
-            return token.strip()
-    return None
-
-
-def _validate_token(token: Optional[str]) -> bool:
-    """校验 token 是否有效且未过期，不产生 401 响应，仅返回是否通过。"""
-    if not token:
-        return False
-    db = get_session()
-    try:
-        session_obj = (
-            db.query(SessionModel)
-            .filter(SessionModel.token == token)
-            .one_or_none()
-        )
-        if session_obj is None:
-            return False
-        if _is_session_expired(session_obj.expires_at):
-            return False
-        return True
-    except Exception:
-        return False
-    finally:
-        db.close()
-
-
-def login_required(fn: Callable):
-    """装饰器：校验请求中的 token，无效或过期返回 401；通过则执行被装饰的视图。"""
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        token = _get_token_from_request()
-        if not token:
-            return jsonify({"error": "未提供令牌"}), 401
-
-        db = get_session()
-        try:
-            session_obj = (
-                db.query(SessionModel)
-                .filter(SessionModel.token == token)
-                .one_or_none()
-            )
-            if session_obj is None:
-                return jsonify({"error": "令牌无效或已过期"}), 401
-            if _is_session_expired(session_obj.expires_at):
-                return jsonify({"error": "令牌无效或已过期"}), 401
-            return fn(*args, **kwargs)
-        except Exception:
-            # 数据库/序列化/时区等异常统一视为未认证，避免 500 泄露内部错误
-            return jsonify({"error": "令牌无效或已过期"}), 401
-        finally:
-            db.close()
-
-    return wrapper
-
-
 @api_bp.route("/filters", methods=["GET"])
-@login_required
 def get_filters():
     """返回高级筛选可选值：从数据库查询所有 genre 与 tag。"""
     db = get_session()
@@ -163,7 +43,6 @@ def get_filters():
 
 
 @api_bp.route("/items", methods=["GET"])
-@login_required
 def list_items():
     """分页返回媒体列表，支持 q 按番号/标题搜索，genre/tag 多选过滤；filter_mode: and=交集, or=并集。"""
     page = max(int(request.args.get("page", 1)), 1)
@@ -294,7 +173,6 @@ def list_items():
 
 
 @api_bp.route("/items/<string:code>", methods=["GET"])
-@login_required
 def get_item(code: str):
     """根据番号返回单条媒体详情（标题、简介、是否有视频等）。"""
     db = get_session()
@@ -337,10 +215,7 @@ def get_item(code: str):
 
 @api_bp.route("/items/<string:code>/poster", methods=["GET"])
 def get_item_poster(code: str) -> Response:
-    """根据番号返回该条目的海报图。支持 query 参数 token（供 <img> 无法带 Header 的场景）。若无海报文件则 404。"""
-    token = _get_token_from_request(allow_query=True)
-    if not _validate_token(token):
-        return jsonify({"error": "未提供令牌或令牌无效"}), 401
+    """根据番号返回该条目的海报图。若无海报文件则 404。"""
     db = get_session()
     try:
         item = get_item_by_code(db, code)
@@ -360,7 +235,6 @@ def get_item_poster(code: str) -> Response:
 
 
 @api_bp.route("/scan", methods=["POST"])
-@login_required
 def trigger_scan():
     """手动触发一次全量媒体扫描（config.MEDIA_ROOT），返回本次处理的条目数。"""
     logger = logging.getLogger(__name__)
@@ -401,12 +275,7 @@ def _resolve_video_path(video_path: str) -> Optional[Path]:
 
 @api_bp.route("/stream/<string:code>", methods=["GET"])
 def stream_video(code: str) -> Response:
-    """根据番号返回视频流。支持 query 参数 token（因 <video> 无法带 Authorization）。
-    使用 conditional=True 支持 Range；路径经 Path 解析以兼容 Windows 中文路径。"""
-    token = _get_token_from_request(allow_query=True)
-    if not _validate_token(token):
-        return jsonify({"error": "未提供令牌或令牌无效"}), 401
-
+    """根据番号返回视频流。使用 conditional=True 支持 Range；路径经 Path 解析以兼容 Windows 中文路径。"""
     db = get_session()
     try:
         item = get_item_by_code(db, code)
@@ -432,10 +301,6 @@ def stream_video(code: str) -> Response:
 def stream_playlist_m3u8(code: str) -> Response:
     """返回 HLS 按字节分片的 m3u8（#EXT-X-BYTERANGE），供 hls.js 播放 .ts。
     首段仅需加载 HLS_SEGMENT_BYTES 即可起播，拖拽时按 range 请求对应段，实现快速启动与灵活 seek。"""
-    token = _get_token_from_request(allow_query=True)
-    if not _validate_token(token):
-        return jsonify({"error": "未提供令牌或令牌无效"}), 401
-
     db = get_session()
     try:
         item = get_item_by_code(db, code)
@@ -457,7 +322,7 @@ def stream_playlist_m3u8(code: str) -> Response:
             segment_bytes = TS_PACKET_SIZE
 
         base_url = request.host_url.rstrip("/")
-        segment_url = f"{base_url}/api/stream/{code}?token={quote(token or '', safe='')}"
+        segment_url = f"{base_url}/api/stream/{code}"
 
         lines = [
             "#EXTM3U",

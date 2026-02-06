@@ -20,7 +20,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchFilters, fetchItems, postScan } from "../api/calls";
-import { getBaseUrl, getToken } from "../api/client";
+import { getBaseUrl } from "../api/client";
 import type { FilterRuleMode, ListFilters, MediaItem } from "../types/api";
 
 const PAGE_SIZE = 24;
@@ -246,9 +246,8 @@ export default function VideoLibPage() {
             sx={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, min(320px, 26vw)))" }}
           >
             {items.map((item: MediaItem) => {
-              const token = getToken();
               const posterUrl = item.poster_url
-                ? `${getBaseUrl()}${item.poster_url}${token ? `?token=${encodeURIComponent(token)}` : ""}`
+                ? `${getBaseUrl()}${item.poster_url}`
                 : undefined;
               return (
                 <Box

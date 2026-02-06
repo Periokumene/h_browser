@@ -4,7 +4,7 @@ import Hls from "hls.js";
 import { useCallback, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { fetchItem } from "../api/calls";
-import { getBaseUrl, getToken } from "../api/client";
+import { getBaseUrl } from "../api/client";
 
 export default function PlayPage() {
   const { code } = useParams<{ code: string }>();
@@ -22,18 +22,12 @@ export default function PlayPage() {
 
   const streamUrl = useCallback(() => {
     const base = getBaseUrl();
-    const token = getToken();
-    const path = `${base}/api/stream/${encodeURIComponent(code || "")}`;
-    if (token) return `${path}?token=${encodeURIComponent(token)}`;
-    return path;
+    return `${base}/api/stream/${encodeURIComponent(code || "")}`;
   }, [code]);
 
   const m3u8Url = useCallback(() => {
     const base = getBaseUrl();
-    const token = getToken();
-    const path = `${base}/api/stream/${encodeURIComponent(code || "")}/playlist.m3u8`;
-    if (token) return `${path}?token=${encodeURIComponent(token)}`;
-    return path;
+    return `${base}/api/stream/${encodeURIComponent(code || "")}/playlist.m3u8`;
   }, [code]);
 
   useEffect(() => {

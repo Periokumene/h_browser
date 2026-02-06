@@ -1,8 +1,6 @@
 """SQLAlchemy 模型与数据库初始化。
 
 - MediaItem: 媒体条目（番号、NFO/视频路径、标题、简介等）
-- User: 用户表，用于登录认证
-- Session: 登录会话，存储 token 与过期时间
 - init_db(): 创建所有表
 - get_session(): 返回新的 Session 实例，使用后需 close
 """
@@ -120,31 +118,6 @@ class MediaItem(Base, TimestampMixin):
         secondary=media_item_tags,
         back_populates="items",
     )
-
-
-class User(Base, TimestampMixin):
-    """简单用户表，仅用于登录认证。"""
-
-    __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
-
-    sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
-
-
-class Session(Base, TimestampMixin):
-    """登录会话 / token 记录。"""
-
-    __tablename__ = "sessions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    token = Column(String(255), unique=True, index=True, nullable=False)
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-
-    user = relationship("User", back_populates="sessions")
 
 
 def init_db() -> None:

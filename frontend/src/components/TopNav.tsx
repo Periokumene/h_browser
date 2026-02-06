@@ -16,11 +16,6 @@ function TopNav() {
   const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    navigate("/login");
-  };
-
   const settingsEntries = [
     { id: "media", label: "媒体库配置" },
     { id: "metadata", label: "元数据管理" },
@@ -57,9 +52,6 @@ function TopNav() {
           aria-label="设置"
         >
           设置
-        </Button>
-        <Button size="sm" variant="outline" onClick={handleLogout}>
-          退出
         </Button>
       </Flex>
 
