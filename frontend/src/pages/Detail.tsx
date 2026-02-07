@@ -21,7 +21,7 @@ import type { MediaDetail } from "../types/api";
 // ---------- 详情页设计尺度（与 theme 语义色搭配） ----------
 const detailTokens = {
   space: { section: 5, block: 4, tight: 2, inline: 3 } as const,
-  fontSize: { sectionLabel: "xs", body: "sm", meta: "xs", title: "md" } as const,
+  fontSize: { sectionLabel: "xs", body: "sm", meta: "xs", title: "lg" } as const,
   bar: { minH: 80, py: 3 } as const,
   fanart: { h: 200 } as const,
   radius: { card: "lg", badge: "md", avatar: "full" } as const,
@@ -99,16 +99,21 @@ export default function DetailPage() {
   const POSTER_HEIGHT_VH = 0.75;
   /** 未滚动时海报垂直居中：海报中心在视口中的比例，0.5 = 居中；改此值可整体上下移动海报与栏 */
   const POSTER_CENTER_VH = 0.45;
+  /** 1️⃣ 海报与内容区左边的间距（Chakra space 数字，如 6 = 1.5rem） */
+  const POSTER_INSET_LEFT = 16;
+  /** 2️⃣ 海报与右侧标题/评分/元数据/演员等内容之间的间距（Chakra space 数字，如 6 = 1.5rem） */
+  const POSTER_CONTENT_GAP = 32;
   // ------------------------------------
   const posterTopVH = POSTER_CENTER_VH - POSTER_HEIGHT_VH / 2;
   const posterWidthVh = POSTER_HEIGHT_VH * (2 / 3);
   const barH = detailTokens.bar.minH;
   const fanartH = detailTokens.fanart.h;
-  const layoutPx = "var(--chakra-space-6, 1.5rem)";
-  /** 桌面端下层内容（栏、详情）左侧留白 = 海报宽 + 布局边距，避免被上层海报遮挡 */
-  const contentLeftMd = `calc(${posterWidthVh * 100}vh + ${layoutPx})`;
   /** 与 Layout 的 px/py 一致，用于 full-bleed 负边距（突破主内容区内边距） */
   const layoutGutter = 6;
+  const layoutPx = `var(--chakra-space-${layoutGutter}, 1.5rem)`;
+  const posterContentGapCss = `var(--chakra-space-${POSTER_CONTENT_GAP}, 1.5rem)`;
+  /** 桌面端下层内容（栏、详情）左侧留白 = 海报宽 + 海报与内容间距，避免被上层海报遮挡 */
+  const contentLeftMd = `calc(${posterWidthVh * 100}vh + ${posterContentGapCss})`;
 
   return (
     <Stack spacing={0} position="relative" marginTop={-layoutGutter}>
@@ -132,7 +137,7 @@ export default function DetailPage() {
       <Box
         position={{ base: "relative", md: "absolute" }}
         top={{ base: undefined, md: `${posterTopVH * 100}vh` }}
-        left={0}
+        left={{ base: 0, md: POSTER_INSET_LEFT }}
         w={{ base: "100%", md: `calc(${posterWidthVh * 100}vh)` }}
         h={{ base: "auto", md: `calc(${POSTER_HEIGHT_VH * 100}vh)` }}
         maxW={{ base: "320px", md: "none" }}
