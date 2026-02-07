@@ -125,6 +125,15 @@ export default function VideoLibPage() {
   };
 
   const hasActiveFilters = filters.genres.length > 0 || filters.tags.length > 0;
+  const activeGenreLabels = filters.genres.map((g) => `[${g}]`);
+  const activeTagLabels = filters.tags.map((t) => `${t}`);
+  const allFilterLabels = [...activeGenreLabels, ...activeTagLabels];
+  const filterSummaryText =
+    !hasActiveFilters
+      ? null
+      : allFilterLabels.length > 3
+        ? `筛选：多个过滤项（${filters.filterMode === "and" ? "交集" : "并集"}）`
+        : `筛选：${allFilterLabels.join("、")}（${filters.filterMode === "and" ? "交集" : "并集"}）`;
 
   return (
     <Stack spacing={4}>
@@ -232,6 +241,12 @@ export default function VideoLibPage() {
           size="sm"
         />
       </Flex>
+
+      {filterSummaryText && (
+        <Text fontSize="sm" color="app.muted.fg">
+          {filterSummaryText}
+        </Text>
+      )}
 
       {loading ? (
         <Flex align="center" justify="center" py={10}>
