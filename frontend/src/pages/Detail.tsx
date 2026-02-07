@@ -94,11 +94,11 @@ export default function DetailPage() {
 
   // ---------- 布局参数（可调） ----------
   /** 重点交互栏距视口顶部的比例，约 0.4 = 栏顶在 40vh 处，可按需调整 */
-  const BAR_TOP_VH = 0.4;
+  const BAR_TOP_VH = 0.2;
   /** 海报高度占视口比例，约 0.75 = 75vh，可按需调整 */
   const POSTER_HEIGHT_VH = 0.75;
   /** 未滚动时海报垂直居中：海报中心在视口中的比例，0.5 = 居中；改此值可整体上下移动海报与栏 */
-  const POSTER_CENTER_VH = 0.5;
+  const POSTER_CENTER_VH = 0.45;
   // ------------------------------------
   const posterTopVH = POSTER_CENTER_VH - POSTER_HEIGHT_VH / 2;
   const posterWidthVh = POSTER_HEIGHT_VH * (2 / 3);
