@@ -275,9 +275,11 @@ export default function DetailPage() {
         <Stack spacing={detailTokens.groupGap}>
           {/* 第一组：简介 */}
           {meta?.outline ? (
-            <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg" noOfLines={4} lineHeight="tall">
-              {meta.outline}
-            </Text>
+            <Box maxW="calc(100% - 10vw)">
+              <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg" noOfLines={4} lineHeight="tall">
+                {meta.outline}
+              </Text>
+            </Box>
           ) : null}
 
           {/* 第二组：类型 / 标签（仅在有内容时渲染整组，组内 itemGap） */}
