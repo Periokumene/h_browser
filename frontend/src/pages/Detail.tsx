@@ -21,6 +21,10 @@ import type { MediaDetail } from "../types/api";
 // ---------- 详情页设计尺度（与 theme 语义色搭配） ----------
 const detailTokens = {
   space: { section: 5, block: 4, tight: 2, inline: 3 } as const,
+  /** 组与组之间的间距（简介 / 类型·标签 / 导演·制片·上映 / 演员） */
+  groupGap: 5,
+  /** 组内项之间的间距（统一数值，空项不渲染故不产生多余空白） */
+  itemGap: 2,
   fontSize: { sectionLabel: "xs", body: "sm", meta: "xs", title: "lg" } as const,
   bar: { minH: 80, py: 3 } as const,
   fanart: { h: 200 } as const,
@@ -266,58 +270,71 @@ export default function DetailPage() {
         </Flex>
       </Flex>
 
-      {/* 简介、类型、标签、元数据：下层，桌面端与栏对齐 */}
-      <Stack spacing={detailTokens.space.section} pt={detailTokens.space.block} pb={detailTokens.space.block} pl={{ base: detailTokens.space.block, md: contentLeftMd }} pr={detailTokens.space.block}>
-        {meta?.outline && (
-          <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg" noOfLines={4} lineHeight="tall">
-            {meta.outline}
-          </Text>
-        )}
-        {meta?.genres?.length ? (
-          <Box>
-            <Text fontSize={detailTokens.fontSize.sectionLabel} color="app.muted" mb={detailTokens.space.tight} textTransform="uppercase" letterSpacing="wider">
-              类型
+      {/* 四组信息：简介 | 类型·标签 | 导演·制片·上映 | 演员；组间 groupGap，组内 itemGap；空组不渲染避免多余空白 */}
+      <Box pt={detailTokens.space.block} pb={detailTokens.space.block} pl={{ base: detailTokens.space.block, md: contentLeftMd }} pr={detailTokens.space.block}>
+        <Stack spacing={detailTokens.groupGap}>
+          {/* 第一组：简介 */}
+          {meta?.outline ? (
+            <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg" noOfLines={4} lineHeight="tall">
+              {meta.outline}
             </Text>
-            <Wrap spacing={detailTokens.space.tight}>
-              {meta.genres.map((g) => (
-                <WrapItem key={g}>
-                  <Badge colorScheme="orange" variant="subtle" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
-                    {g}
-                  </Badge>
-                </WrapItem>
-              ))}
-            </Wrap>
-          </Box>
-        ) : null}
-        {meta?.tags?.length ? (
-          <Box>
-            <Text fontSize={detailTokens.fontSize.sectionLabel} color="app.muted" mb={detailTokens.space.tight} textTransform="uppercase" letterSpacing="wider">
-              标签
-            </Text>
-            <Wrap spacing={detailTokens.space.tight}>
-              {meta.tags.map((t) => (
-                <WrapItem key={t}>
-                  <Badge variant="outline" colorScheme="gray" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
-                    {t}
-                  </Badge>
-                </WrapItem>
-              ))}
-            </Wrap>
-          </Box>
-        ) : null}
-        <MetaLine label="国家/地区" value={meta?.country} />
-        <MetaLine label="导演" value={meta?.director} />
-        <MetaLine label="制片" value={meta?.studio} />
-        <MetaLine label="上映" value={meta?.premiered} />
-      </Stack>
+          ) : null}
 
-      {/* 演员表 */}
-      {meta?.actors?.length ? (
-        <Box pl={{ base: detailTokens.space.block, md: contentLeftMd }} pr={detailTokens.space.block} pb={detailTokens.space.block}>
-          <Heading size="sm" mb={detailTokens.space.block} color="app.muted" fontSize={detailTokens.fontSize.body} textTransform="uppercase" letterSpacing="wider" fontWeight="semibold">
-            演员
-          </Heading>
-          <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={detailTokens.space.block}>
+          {/* 第二组：类型 / 标签（仅在有内容时渲染整组，组内 itemGap） */}
+          {(meta?.genres?.length || meta?.tags?.length) ? (
+            <Stack spacing={detailTokens.itemGap}>
+              {meta?.genres?.length ? (
+                <Flex align="center" flexWrap="wrap" gap={detailTokens.space.tight}>
+                  <Text as="span" fontSize={detailTokens.fontSize.body} color="app.muted" flexShrink={0}>
+                    类型:
+                  </Text>
+                  <Wrap spacing={detailTokens.space.tight}>
+                    {meta.genres.map((g) => (
+                      <WrapItem key={g}>
+                        <Badge colorScheme="orange" variant="subtle" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
+                          {g}
+                        </Badge>
+                      </WrapItem>
+                    ))}
+                  </Wrap>
+                </Flex>
+              ) : null}
+              {meta?.tags?.length ? (
+                <Flex align="center" flexWrap="wrap" gap={detailTokens.space.tight}>
+                  <Text as="span" fontSize={detailTokens.fontSize.body} color="app.muted" flexShrink={0}>
+                    标签:
+                  </Text>
+                  <Wrap spacing={detailTokens.space.tight}>
+                    {meta.tags.map((t) => (
+                      <WrapItem key={t}>
+                        <Badge variant="outline" colorScheme="gray" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
+                          {t}
+                        </Badge>
+                      </WrapItem>
+                    ))}
+                  </Wrap>
+                </Flex>
+              ) : null}
+            </Stack>
+          ) : null}
+
+          {/* 第三组：导演 / 制片 / 国家·地区 / 上映（仅渲染有值的项，组内 itemGap） */}
+          {[meta?.country, meta?.director, meta?.studio, meta?.premiered].some((v) => v != null && v !== "") ? (
+            <Stack spacing={detailTokens.itemGap}>
+              <MetaLine label="国家/地区" value={meta?.country} />
+              <MetaLine label="导演" value={meta?.director} />
+              <MetaLine label="制片" value={meta?.studio} />
+              <MetaLine label="上映" value={meta?.premiered} />
+            </Stack>
+          ) : null}
+
+          {/* 第四组：演员（仅在有数据时渲染） */}
+          {meta?.actors?.length ? (
+            <Box>
+              <Text fontSize={detailTokens.fontSize.body} color="app.muted" mb={detailTokens.itemGap}>
+                演员:
+              </Text>
+              <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={detailTokens.space.block}>
             {meta.actors.map((actor) => (
               <Flex
                 key={actor.name}
@@ -373,6 +390,8 @@ export default function DetailPage() {
           </SimpleGrid>
         </Box>
       ) : null}
+        </Stack>
+      </Box>
     </Stack>
   );
 }
