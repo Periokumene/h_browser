@@ -18,6 +18,17 @@ import { fetchItem } from "../api/calls";
 import { getBaseUrl } from "../api/client";
 import type { MediaDetail } from "../types/api";
 
+// ---------- 详情页设计尺度（与 theme 语义色搭配） ----------
+const detailTokens = {
+  space: { section: 5, block: 4, tight: 2, inline: 3 } as const,
+  fontSize: { sectionLabel: "xs", body: "sm", meta: "xs", title: "md" } as const,
+  bar: { minH: 80, py: 3 } as const,
+  fanart: { h: 200 } as const,
+  radius: { card: "lg", badge: "md", avatar: "full" } as const,
+  playIcon: { size: 10 } as const,
+  actor: { avatar: 10, cardP: 3, cardGap: 3 } as const,
+};
+
 function MetaLine({
   label,
   value,
@@ -30,8 +41,8 @@ function MetaLine({
   if (hideIfEmpty && (value === undefined || value === null || value === ""))
     return null;
   return (
-    <Text fontSize="sm" color="app.muted.fg">
-      <Text as="span" color="app.muted" mr={2}>
+    <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg">
+      <Text as="span" color="app.muted" mr={detailTokens.space.tight}>
         {label}:
       </Text>
       {String(value)}
@@ -51,10 +62,10 @@ export default function DetailPage() {
 
   if (loading) {
     return (
-      <Stack spacing={4}>
-        <Flex gap={6} align="flex-start">
-          <Skeleton w="min(280px, 26vw)" aspectRatio={2 / 3} borderRadius="md" flexShrink={0} />
-          <Stack flex={1} spacing={3}>
+      <Stack spacing={detailTokens.space.section}>
+        <Flex gap={detailTokens.space.section} align="flex-start">
+          <Skeleton w="min(280px, 26vw)" aspectRatio={2 / 3} borderRadius={detailTokens.radius.card} flexShrink={0} />
+          <Stack flex={1} spacing={detailTokens.space.block}>
             <Skeleton h="32px" w="70%" />
             <Skeleton h="20px" w="40%" />
             <Skeleton h="80px" w="100%" />
@@ -69,8 +80,8 @@ export default function DetailPage() {
       ? (error as { response?: { data?: { error?: string } } })?.response?.data?.error || "加载详情失败"
       : "加载失败或条目不存在";
     return (
-      <Box>
-        <Text>{msg}</Text>
+      <Box py={detailTokens.space.section}>
+        <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg">{msg}</Text>
       </Box>
     );
   }
@@ -90,10 +101,9 @@ export default function DetailPage() {
   const POSTER_CENTER_VH = 0.5;
   // ------------------------------------
   const posterTopVH = POSTER_CENTER_VH - POSTER_HEIGHT_VH / 2;
-  /** 海报宽度（与高度 2:3），用于栏/详情的左侧留白与 full-bleed 计算 */
   const posterWidthVh = POSTER_HEIGHT_VH * (2 / 3);
-  const barH = 72;
-  const fanartH = 180;
+  const barH = detailTokens.bar.minH;
+  const fanartH = detailTokens.fanart.h;
   const layoutPx = "var(--chakra-space-6, 1.5rem)";
   /** 桌面端下层内容（栏、详情）左侧留白 = 海报宽 + 布局边距，避免被上层海报遮挡 */
   const contentLeftMd = `calc(${posterWidthVh * 100}vh + ${layoutPx})`;
@@ -109,11 +119,11 @@ export default function DetailPage() {
         marginLeft={-layoutGutter}
         marginRight={-layoutGutter}
         h={{ base: `${fanartH}px`, md: `${BAR_TOP_VH * 100}vh` }}
-        bg="gray.500"
+        bg="app.surface.subtle"
         flexShrink={0}
         overflow="hidden"
       >
-        <Flex h="100%" align="center" justify="center" color="gray.500" fontSize="sm">
+        <Flex h="100%" align="center" justify="center" color="app.muted" fontSize={detailTokens.fontSize.body}>
           fanart 占位
         </Flex>
       </Box>
@@ -129,7 +139,7 @@ export default function DetailPage() {
         mx={{ base: "auto", md: 0 }}
         zIndex={10}
         flexShrink={0}
-        borderRadius="lg"
+        borderRadius={detailTokens.radius.card}
         overflow="hidden"
         bg="app.surface"
         boxShadow="lg"
@@ -163,7 +173,7 @@ export default function DetailPage() {
               }}
             />
           ) : (
-            <Flex h="100%" align="center" justify="center" color="app.muted" fontSize="sm">
+            <Flex h="100%" align="center" justify="center" color="app.muted" fontSize={detailTokens.fontSize.body}>
               无海报
             </Flex>
           )}
@@ -178,15 +188,15 @@ export default function DetailPage() {
               pointerEvents="none"
             >
               <Flex
-                w="24"
-                h="24"
-                borderRadius="full"
+                w={detailTokens.playIcon.size}
+                h={detailTokens.playIcon.size}
+                borderRadius={detailTokens.radius.avatar}
                 bg="app.accent"
                 color="app.accent.fg"
                 align="center"
                 justify="center"
-                fontSize="5xl"
-                pl="8px"
+                fontSize="4xl"
+                pl="6px"
                 boxShadow="xl"
               >
                 ▶
@@ -204,37 +214,37 @@ export default function DetailPage() {
         minH={`${barH}px`}
         direction="column"
         justify="center"
-        py={2}
-        pl={{ base: 4, md: `calc(${layoutPx} + ${contentLeftMd})` }}
-        pr={{ base: 4, md: layoutGutter }}
-        bg="gray.700"
+        py={detailTokens.bar.py}
+        pl={{ base: detailTokens.space.block, md: `calc(${layoutPx} + ${contentLeftMd})` }}
+        pr={{ base: detailTokens.space.block, md: layoutGutter }}
+        bg="app.surface"
         flexShrink={0}
       >
-        <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
-          <Heading size="md" noOfLines={1} flex="1 1 auto" minW="120px">
+        <Flex align="center" justify="space-between" gap={detailTokens.space.inline} flexWrap="wrap">
+          <Heading size={detailTokens.fontSize.title} noOfLines={1} flex="1 1 auto" minW="120px">
             {detail.title || detail.code}
           </Heading>
           {detail.video_type && (
-            <Badge variant="outline" colorScheme="gray" fontSize="sm">
+            <Badge variant="outline" colorScheme="gray" fontSize={detailTokens.fontSize.body} borderRadius={detailTokens.radius.badge}>
               {detail.video_type}
             </Badge>
           )}
         </Flex>
-        <Flex align="center" justify="space-between" gap={3} flexWrap="wrap" mt={1}>
-          <Flex align="center" gap={3} flexWrap="wrap">
+        <Flex align="center" justify="space-between" gap={detailTokens.space.inline} flexWrap="wrap" mt={detailTokens.space.tight}>
+          <Flex align="center" gap={detailTokens.space.inline} flexWrap="wrap">
             {meta?.rating != null && (
-              <Text fontSize="sm" color="gray.300">
+              <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg">
                 评分 {meta.rating}
                 {meta.votes != null && meta.votes > 0 && (
-                  <Text as="span" color="gray.500" ml={1}>({meta.votes})</Text>
+                  <Text as="span" color="app.muted" ml={1}>({meta.votes})</Text>
                 )}
               </Text>
             )}
-            {meta?.year != null && <Text fontSize="sm" color="gray.400">{meta.year}</Text>}
+            {meta?.year != null && <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg">{meta.year}</Text>}
             {meta?.runtime != null && (
-              <Text fontSize="sm" color="gray.400">{meta.runtime} 分钟</Text>
+              <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg">{meta.runtime} 分钟</Text>
             )}
-            <Text fontSize="sm" color="gray.500">番号 {detail.code}</Text>
+            <Text fontSize={detailTokens.fontSize.body} color="app.muted">番号 {detail.code}</Text>
           </Flex>
           {detail.has_video ? (
             <Button
@@ -246,27 +256,27 @@ export default function DetailPage() {
               播放
             </Button>
           ) : (
-            <Badge colorScheme="red">无视频</Badge>
+            <Badge colorScheme="red" borderRadius={detailTokens.radius.badge}>无视频</Badge>
           )}
         </Flex>
       </Flex>
 
       {/* 简介、类型、标签、元数据：下层，桌面端与栏对齐 */}
-      <Stack spacing={4} pt={4} pb={4} pl={{ base: 4, md: contentLeftMd }} pr={4}>
+      <Stack spacing={detailTokens.space.section} pt={detailTokens.space.block} pb={detailTokens.space.block} pl={{ base: detailTokens.space.block, md: contentLeftMd }} pr={detailTokens.space.block}>
         {meta?.outline && (
-          <Text fontSize="sm" color="app.muted.fg" noOfLines={4}>
+          <Text fontSize={detailTokens.fontSize.body} color="app.muted.fg" noOfLines={4} lineHeight="tall">
             {meta.outline}
           </Text>
         )}
         {meta?.genres?.length ? (
           <Box>
-            <Text fontSize="xs" color="app.muted" mb={2}>
+            <Text fontSize={detailTokens.fontSize.sectionLabel} color="app.muted" mb={detailTokens.space.tight} textTransform="uppercase" letterSpacing="wider">
               类型
             </Text>
-            <Wrap spacing={2}>
+            <Wrap spacing={detailTokens.space.tight}>
               {meta.genres.map((g) => (
                 <WrapItem key={g}>
-                  <Badge colorScheme="orange" variant="subtle">
+                  <Badge colorScheme="orange" variant="subtle" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
                     {g}
                   </Badge>
                 </WrapItem>
@@ -276,13 +286,13 @@ export default function DetailPage() {
         ) : null}
         {meta?.tags?.length ? (
           <Box>
-            <Text fontSize="xs" color="app.muted" mb={2}>
+            <Text fontSize={detailTokens.fontSize.sectionLabel} color="app.muted" mb={detailTokens.space.tight} textTransform="uppercase" letterSpacing="wider">
               标签
             </Text>
-            <Wrap spacing={2}>
+            <Wrap spacing={detailTokens.space.tight}>
               {meta.tags.map((t) => (
                 <WrapItem key={t}>
-                  <Badge variant="outline" colorScheme="gray">
+                  <Badge variant="outline" colorScheme="gray" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
                     {t}
                   </Badge>
                 </WrapItem>
@@ -298,27 +308,28 @@ export default function DetailPage() {
 
       {/* 演员表 */}
       {meta?.actors?.length ? (
-        <Box pl={{ base: 4, md: contentLeftMd }} pr={4} pb={4}>
-          <Heading size="sm" mb={3} color="gray.400">
+        <Box pl={{ base: detailTokens.space.block, md: contentLeftMd }} pr={detailTokens.space.block} pb={detailTokens.space.block}>
+          <Heading size="sm" mb={detailTokens.space.block} color="app.muted" fontSize={detailTokens.fontSize.body} textTransform="uppercase" letterSpacing="wider" fontWeight="semibold">
             演员
           </Heading>
-          <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={4}>
+          <SimpleGrid columns={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing={detailTokens.space.block}>
             {meta.actors.map((actor) => (
               <Flex
                 key={actor.name}
                 align="center"
-                gap={3}
-                p={3}
-                borderRadius="md"
-                bg="blackAlpha.400"
+                gap={detailTokens.actor.cardGap}
+                p={detailTokens.actor.cardP}
+                borderRadius={detailTokens.radius.badge}
+                bg="app.surface.subtle"
                 _hover={{ bg: "whiteAlpha.100" }}
+                transition="background 0.2s ease"
               >
                 <Box
-                  w="10"
-                  h="10"
-                  borderRadius="full"
+                  w={detailTokens.actor.avatar}
+                  h={detailTokens.actor.avatar}
+                  borderRadius={detailTokens.radius.avatar}
                   overflow="hidden"
-                  bg="gray.600"
+                  bg="app.surface"
                   flexShrink={0}
                 >
                   {actor.thumb ? (
@@ -335,19 +346,19 @@ export default function DetailPage() {
                       h="100%"
                       align="center"
                       justify="center"
-                      color="gray.500"
-                      fontSize="xs"
+                      color="app.muted"
+                      fontSize={detailTokens.fontSize.sectionLabel}
                     >
                       {actor.name.slice(0, 1)}
                     </Flex>
                   )}
                 </Box>
                 <Box minW={0}>
-                  <Text fontSize="sm" fontWeight="medium" noOfLines={1}>
+                  <Text fontSize={detailTokens.fontSize.body} fontWeight="medium" noOfLines={1}>
                     {actor.name}
                   </Text>
                   {actor.role ? (
-                    <Text fontSize="xs" color="gray.500" noOfLines={1}>
+                    <Text fontSize={detailTokens.fontSize.meta} color="app.muted" noOfLines={1}>
                       {actor.role}
                     </Text>
                   ) : null}
