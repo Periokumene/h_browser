@@ -1,6 +1,7 @@
 import {
   Badge,
   Box,
+  Button,
   Flex,
   Heading,
   Image,
@@ -9,7 +10,7 @@ import {
   Stack,
   Text,
   Wrap,
-  WrapItem
+  WrapItem,
 } from "@chakra-ui/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
@@ -80,18 +81,52 @@ export default function DetailPage() {
     : undefined;
   const meta = detail.metadata;
 
+  // ---------- 布局参数（可调） ----------
+  /** 重点交互栏距视口顶部的比例，约 0.4 = 栏顶在 40vh 处，可按需调整 */
+  const BAR_TOP_VH = 0.4;
+  /** 海报高度占视口比例，约 0.75 = 75vh，可按需调整 */
+  const POSTER_HEIGHT_VH = 0.75;
+  /** 未滚动时海报垂直居中：海报中心在视口中的比例，0.5 = 居中；改此值可整体上下移动海报与栏 */
+  const POSTER_CENTER_VH = 0.5;
+  // ------------------------------------
+  const posterTopVH = POSTER_CENTER_VH - POSTER_HEIGHT_VH / 2;
+  const barH = 72;
+  const fanartH = 180;
+  const contentOverlap = 80;
+  const layoutPx = "var(--chakra-space-6, 1.5rem)";
+
   return (
-    <Stack spacing={6}>
+    <Stack spacing={0}>
+      {/* 下层：fanart 图片区域（占位），作为背景层 */}
+      <Box
+        w="100%"
+        h={`${fanartH}px`}
+        bg="gray.700"
+        flexShrink={0}
+        overflow="hidden"
+      >
+        <Flex h="100%" align="center" justify="center" color="gray.500" fontSize="sm">
+          fanart 占位
+        </Flex>
+      </Box>
+
+      {/* 上层：桌面端用 paddingTop = posterTopVH 实现「未滚动时海报恰好居中」；栏在 BAR_TOP_VH 屏高 */}
       <Flex
         direction={{ base: "column", md: "row" }}
-        gap={6}
-        align="flex-start"
+        align={{ base: "flex-start", md: "flex-start" }}
         flexWrap="nowrap"
+        gap={0}
+        marginTop={{ base: 0, md: `-${contentOverlap}px` }}
+        position="relative"
+        zIndex={1}
+        minH={{ md: "100vh" }}
+        pt={{ md: `${posterTopVH * 100}vh` }}
       >
-        {/* 海报：悬停缩放 + 播放图标，点击跳转播放页 */}
+        {/* 海报：桌面端为 75vh 高、50vh 宽（2:3），未滚动时由 POSTER_CENTER_VH 控制居中 */}
         <Box
-          w={{ base: "100%", md: "min(280px, 26vw)" }}
-          maxW="320px"
+          w={{ base: "100%", md: `calc(${POSTER_HEIGHT_VH * (2 / 3)} * 100vh)` }}
+          h={{ base: "auto", md: `${POSTER_HEIGHT_VH * 100}vh` }}
+          maxW={{ base: "320px", md: "none" }}
           flexShrink={0}
           borderRadius="lg"
           overflow="hidden"
@@ -103,22 +138,18 @@ export default function DetailPage() {
           role={detail.has_video ? "button" : undefined}
           aria-label={detail.has_video ? "播放" : undefined}
           sx={{
-            "& .poster-img": {
-              transition: "transform 0.3s ease",
-            },
-            ...(detail.has_video && {
-              "&:hover .poster-img": { transform: "scale(1.05)" },
-            }),
-            "& .play-overlay": {
-              opacity: 0,
-              transition: "opacity 0.2s ease",
-            },
-            ...(detail.has_video && {
-              "&:hover .play-overlay": { opacity: 1 },
-            }),
+            "& .poster-img": { transition: "transform 0.3s ease" },
+            ...(detail.has_video && { "&:hover .poster-img": { transform: "scale(1.05)" } }),
+            "& .play-overlay": { opacity: 0, transition: "opacity 0.2s ease" },
+            ...(detail.has_video && { "&:hover .play-overlay": { opacity: 1 } }),
           }}
         >
-          <Box aspectRatio={2 / 3} position="relative">
+          <Box
+            position="relative"
+            w="100%"
+            h="100%"
+            sx={{ aspectRatio: { base: "2/3", md: "unset" } }}
+          >
             {posterUrl ? (
               <Image
                 className="poster-img"
@@ -132,13 +163,7 @@ export default function DetailPage() {
                 }}
               />
             ) : (
-              <Flex
-                h="100%"
-                align="center"
-                justify="center"
-                color="app.muted"
-                fontSize="sm"
-              >
+              <Flex h="100%" align="center" justify="center" color="app.muted" fontSize="sm">
                 无海报
               </Flex>
             )}
@@ -171,8 +196,114 @@ export default function DetailPage() {
           </Box>
         </Box>
 
-        {/* 右侧信息 */}
-        <Stack spacing={4} flex={1} minW={0}>
+        {/* 右侧：空白撑至 BAR_TOP_VH + 重点交互栏 + 元数据 */}
+        <Flex direction="column" flex={1} minW={0} display={{ base: "none", md: "flex" }}>
+          <Box
+            h={`${(BAR_TOP_VH - posterTopVH) * 100}vh`}
+            minH={0}
+            flexShrink={0}
+          />
+          {/* 水平灰色重点栏：左右顶满视口（突破 Layout 的 px），约在 BAR_TOP_VH 屏高位置 */}
+          <Flex
+            minH={`${barH}px`}
+            direction="column"
+            justify="center"
+            px={4}
+            py={2}
+            bg="gray.700"
+            flexShrink={0}
+            marginLeft={`calc(-${POSTER_HEIGHT_VH * (2 / 3) * 100}vh - ${layoutPx})`}
+            marginRight="-6"
+            width={`calc(100% + ${POSTER_HEIGHT_VH * (2 / 3) * 100}vh + 2 * ${layoutPx})`}
+            paddingLeft={`calc(${POSTER_HEIGHT_VH * (2 / 3) * 100}vh + ${layoutPx} + 16px)`}
+          >
+            <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
+              <Heading size="md" noOfLines={1} flex="1 1 auto" minW="120px">
+                {detail.title || detail.code}
+              </Heading>
+              {detail.video_type && (
+                <Badge variant="outline" colorScheme="gray" fontSize="sm">
+                  {detail.video_type}
+                </Badge>
+              )}
+            </Flex>
+            <Flex align="center" justify="space-between" gap={3} flexWrap="wrap" mt={1}>
+              <Flex align="center" gap={3} flexWrap="wrap">
+                {meta?.rating != null && (
+                  <Text fontSize="sm" color="gray.300">
+                    评分 {meta.rating}
+                    {meta.votes != null && meta.votes > 0 && (
+                      <Text as="span" color="gray.500" ml={1}>({meta.votes})</Text>
+                    )}
+                  </Text>
+                )}
+                {meta?.year != null && <Text fontSize="sm" color="gray.400">{meta.year}</Text>}
+                {meta?.runtime != null && (
+                  <Text fontSize="sm" color="gray.400">{meta.runtime} 分钟</Text>
+                )}
+                <Text fontSize="sm" color="gray.500">番号 {detail.code}</Text>
+              </Flex>
+              {detail.has_video ? (
+                <Button
+                  size="sm"
+                  colorScheme="orange"
+                  leftIcon={<Text>▶</Text>}
+                  onClick={() => navigate(`/play/${encodeURIComponent(detail.code)}`)}
+                >
+                  播放
+                </Button>
+              ) : (
+                <Badge colorScheme="red">无视频</Badge>
+              )}
+            </Flex>
+          </Flex>
+          <Stack spacing={4} pt={4} px={0}>
+            {meta?.outline && (
+              <Text fontSize="sm" color="app.muted.fg" noOfLines={4}>
+                {meta.outline}
+              </Text>
+            )}
+            {meta?.genres?.length ? (
+              <Box>
+                <Text fontSize="xs" color="app.muted" mb={2}>
+                  类型
+                </Text>
+                <Wrap spacing={2}>
+                  {meta.genres.map((g) => (
+                    <WrapItem key={g}>
+                      <Badge colorScheme="orange" variant="subtle">
+                        {g}
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              </Box>
+            ) : null}
+            {meta?.tags?.length ? (
+              <Box>
+                <Text fontSize="xs" color="app.muted" mb={2}>
+                  标签
+                </Text>
+                <Wrap spacing={2}>
+                  {meta.tags.map((t) => (
+                    <WrapItem key={t}>
+                      <Badge variant="outline" colorScheme="gray">
+                        {t}
+                      </Badge>
+                    </WrapItem>
+                  ))}
+                </Wrap>
+              </Box>
+            ) : null}
+            <MetaLine label="国家/地区" value={meta?.country} />
+            <MetaLine label="导演" value={meta?.director} />
+            <MetaLine label="制片" value={meta?.studio} />
+            <MetaLine label="上映" value={meta?.premiered} />
+          </Stack>
+        </Flex>
+
+        {/* 小屏：不叠栏，沿用纵向信息块 */}
+        <Stack spacing={4} flex={1} minW={0} display={{ base: "flex", md: "none" }} pt={4}>
           <Heading size="lg" noOfLines={2}>
             {detail.title || detail.code}
           </Heading>
@@ -189,16 +320,12 @@ export default function DetailPage() {
               <Badge variant="outline" colorScheme="gray">{detail.video_type}</Badge>
             )}
           </Flex>
-
-          {/* 评分、年份、时长等 */}
           <Flex gap={4} flexWrap="wrap">
             {meta?.rating != null && (
               <Text fontSize="sm" color="gray.300">
                 评分 {meta.rating}
                 {meta.votes != null && meta.votes > 0 && (
-                  <Text as="span" color="app.muted" ml={1}>
-                    ({meta.votes})
-                  </Text>
+                  <Text as="span" color="app.muted" ml={1}>({meta.votes})</Text>
                 )}
               </Text>
             )}
@@ -206,12 +333,14 @@ export default function DetailPage() {
             <MetaLine label="时长" value={meta?.runtime != null ? `${meta.runtime} 分钟` : undefined} />
             <MetaLine label="上映" value={meta?.premiered} />
           </Flex>
-
           <MetaLine label="国家/地区" value={meta?.country} />
           <MetaLine label="导演" value={meta?.director} />
           <MetaLine label="制片" value={meta?.studio} />
-
-          {/* 类型、标签：分两行 */}
+          {meta?.outline && (
+            <Text fontSize="sm" color="app.muted.fg" noOfLines={3}>
+              {meta.outline}
+            </Text>
+          )}
           {meta?.genres?.length ? (
             <Box>
               <Text fontSize="xs" color="app.muted" mb={2}>
@@ -244,13 +373,6 @@ export default function DetailPage() {
               </Wrap>
             </Box>
           ) : null}
-
-          {/* 简短概述 */}
-          {meta?.outline && (
-            <Text fontSize="sm" color="app.muted.fg" noOfLines={3}>
-              {meta.outline}
-            </Text>
-          )}
         </Stack>
       </Flex>
 
