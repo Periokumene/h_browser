@@ -97,15 +97,19 @@ export default function DetailPage() {
   const layoutPx = "var(--chakra-space-6, 1.5rem)";
   /** 桌面端下层内容（栏、详情）左侧留白 = 海报宽 + 布局边距，避免被上层海报遮挡 */
   const contentLeftMd = `calc(${posterWidthVh * 100}vh + ${layoutPx})`;
+  /** 与 Layout 的 px/py 一致，用于 full-bleed 负边距（突破主内容区内边距） */
+  const layoutGutter = 6;
 
   return (
-    <Stack spacing={0} position="relative">
+    <Stack spacing={0} position="relative" marginTop={-layoutGutter}>
       {/* ---------- 下层：fanart、重点交互栏、简介/元数据（文档流） ---------- */}
-      {/* fanart：桌面端高度使栏顶落在 BAR_TOP_VH(40vh)，小屏固定高度 */}
+      {/* fanart：突破 Layout 的 px/py，与页面左右及顶边填满 */}
       <Box
-        w="100%"
+        w={`calc(100% + 2 * var(--chakra-space-${layoutGutter}, 1.5rem))`}
+        marginLeft={-layoutGutter}
+        marginRight={-layoutGutter}
         h={{ base: `${fanartH}px`, md: `${BAR_TOP_VH * 100}vh` }}
-        bg="gray.700"
+        bg="gray.500"
         flexShrink={0}
         overflow="hidden"
       >
@@ -118,7 +122,7 @@ export default function DetailPage() {
       <Box
         position={{ base: "relative", md: "absolute" }}
         top={{ base: undefined, md: `${posterTopVH * 100}vh` }}
-        left={{ base: 0, md: layoutPx }}
+        left={0}
         w={{ base: "100%", md: `calc(${posterWidthVh * 100}vh)` }}
         h={{ base: "auto", md: `calc(${POSTER_HEIGHT_VH * 100}vh)` }}
         maxW={{ base: "320px", md: "none" }}
@@ -192,14 +196,17 @@ export default function DetailPage() {
         </Box>
       </Box>
 
-      {/* 重点交互栏：全宽，下层；桌面端左侧留白使文字从海报右侧开始 */}
+      {/* 重点交互栏：突破 Layout 的 px，与页面左右填满；内边距补偿使文案与内容区对齐 */}
       <Flex
+        w={`calc(100% + 2 * var(--chakra-space-${layoutGutter}, 1.5rem))`}
+        marginLeft={-layoutGutter}
+        marginRight={-layoutGutter}
         minH={`${barH}px`}
         direction="column"
         justify="center"
         py={2}
-        pl={{ base: 4, md: contentLeftMd }}
-        pr={4}
+        pl={{ base: 4, md: `calc(${layoutPx} + ${contentLeftMd})` }}
+        pr={{ base: 4, md: layoutGutter }}
         bg="gray.700"
         flexShrink={0}
       >
