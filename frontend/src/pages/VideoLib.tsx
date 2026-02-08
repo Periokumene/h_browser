@@ -6,6 +6,7 @@ import {
   Heading,
   Image,
   Input,
+  Portal,
   Popover,
   PopoverBody,
   PopoverContent,
@@ -14,7 +15,7 @@ import {
   Spinner,
   Stack,
   Text,
-  useToast
+  useToast,
 } from "@chakra-ui/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,27 +28,80 @@ const PAGE_SIZE = 24;
 
 export type { FilterRuleMode, ListFilters };
 
+function filtersFromSearchParams(searchParams: URLSearchParams): ListFilters {
+  const genres = searchParams.getAll("genre").filter(Boolean);
+  const tags = searchParams.getAll("tag").filter(Boolean);
+  const filterMode = searchParams.get("filter_mode") === "or" ? "or" : "and";
+  return { genres, tags, filterMode };
+}
+
+function searchParamsFromFilters(prev: URLSearchParams, filters: ListFilters): URLSearchParams {
+  const next = new URLSearchParams(prev);
+  next.delete("genre");
+  next.delete("tag");
+  filters.genres.forEach((g) => next.append("genre", g));
+  filters.tags.forEach((t) => next.append("tag", t));
+  next.set("filter_mode", filters.filterMode);
+  return next;
+}
+
+const SCROLL_STORAGE_KEY = "videolib_scroll";
+
 export default function VideoLibPage() {
   const [search, setSearch] = useState("");
   const [searchSubmitted, setSearchSubmitted] = useState("");
-  const [filters, setFilters] = useState<ListFilters>({ genres: [], tags: [], filterMode: "and" });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scope: ListScope = searchParams.get("scope") === "favorites" ? "favorites" : "all";
+  const [filters, setFiltersState] = useState<ListFilters>(() => filtersFromSearchParams(searchParams));
+  const [contextMenu, setContextMenu] = useState<{ code: string; x: number; y: number } | null>(null);
   const isFirstFilterMount = useRef(true);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const scope: ListScope = searchParams.get("scope") === "favorites" ? "favorites" : "all";
 
-  // 从详情页点击类型/标签跳转时带入的筛选，应用一次后清除 state
+  const setFilters = useCallback(
+    (next: ListFilters | ((prev: ListFilters) => ListFilters)) => {
+      setFiltersState((prev) => {
+        const resolved = typeof next === "function" ? next(prev) : next;
+        setSearchParams((p) => searchParamsFromFilters(p, resolved), { replace: true });
+        return resolved;
+      });
+    },
+    [setSearchParams]
+  );
+
+  // 从详情页点击类型/标签跳转时带入的筛选，应用一次并写入 URL 后清除 state
   useEffect(() => {
     const initial = (location.state as { initialFilters?: ListFilters } | null)?.initialFilters;
     if (initial) {
-      setFilters(initial);
-      navigate("/videolib", { replace: true, state: {} });
+      setFiltersState(initial);
+      const nextParams = searchParamsFromFilters(searchParams, initial);
+      navigate({ pathname: location.pathname, search: nextParams.toString() }, { replace: true, state: {} });
     }
-  }, [location.state, navigate]);
+  }, [location.state?.initialFilters]);
+
+  // 返回本页时恢复滚动位置
+  useEffect(() => {
+    const saved = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+    if (saved) {
+      sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+      const y = parseInt(saved, 10);
+      if (!isNaN(y)) {
+        const id = setTimeout(() => window.scrollTo({ top: y, behavior: "auto" }), 0);
+        return () => clearTimeout(id);
+      }
+    }
+  }, []);
+
+  // 右键菜单：点击页面任意处关闭
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [contextMenu]);
 
   const { data: filterOptions } = useQuery({
     queryKey: ["filters"],
@@ -313,7 +367,14 @@ export default function VideoLibPage() {
                   sx={{
                     "&:hover .poster-img": { transform: "scale(1.08)" },
                   }}
-                  onClick={() => navigate(`/detail/${encodeURIComponent(item.code)}`)}
+                  onClick={() => {
+                    sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY));
+                    navigate(`/detail/${encodeURIComponent(item.code)}`);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({ code: item.code, x: e.clientX, y: e.clientY });
+                  }}
                 >
                   <Box
                     aspectRatio="2/3"
@@ -385,6 +446,39 @@ export default function VideoLibPage() {
             )}
           </Flex>
         </>
+      )}
+
+      {contextMenu && (
+        <Portal>
+          <Box
+            position="fixed"
+            left={contextMenu.x}
+            top={contextMenu.y}
+            zIndex={9999}
+            bg="app.surface"
+            borderWidth="1px"
+            borderColor="app.border"
+            borderRadius="md"
+            shadow="lg"
+            py={1}
+            minW="120px"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Button
+              size="sm"
+              variant="ghost"
+              w="100%"
+              justifyContent="flex-start"
+              px={3}
+              onClick={() => {
+                window.open(`/detail/${encodeURIComponent(contextMenu.code)}`, "_blank");
+                setContextMenu(null);
+              }}
+            >
+              新标签页打开
+            </Button>
+          </Box>
+        </Portal>
       )}
     </Stack>
   );

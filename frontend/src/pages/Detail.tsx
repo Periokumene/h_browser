@@ -424,7 +424,7 @@ export default function DetailPage() {
             <Button
               size="sm"
               variant={detail.is_favorite ? "solid" : "outline"}
-              colorScheme="yellow"
+              colorScheme="orange"
               aria-label={detail.is_favorite ? "取消收藏" : "收藏"}
               title={detail.is_favorite ? "取消收藏" : "收藏"}
               onClick={() => favoriteMutation.mutate(!detail.is_favorite)}

@@ -186,20 +186,26 @@ def create_or_update_item(
             if nfo_meta.plot:
                 item.description = nfo_meta.plot
 
-    # 更新 genres/tags 关联
+    # 更新 genres/tags 关联（按名称去重，避免 NFO 中重复项导致 UNIQUE 约束失败）
     if metadata:
         item.genres.clear()
         item.tags.clear()
 
+        seen_genres: set[str] = set()
         for genre_name in metadata.genres or []:
             if genre_name and genre_name.strip():
-                genre = get_or_create_genre(session, genre_name.strip())
-                item.genres.append(genre)
+                name = genre_name.strip()
+                if name not in seen_genres:
+                    seen_genres.add(name)
+                    item.genres.append(get_or_create_genre(session, name))
 
+        seen_tags: set[str] = set()
         for tag_name in metadata.tags or []:
             if tag_name and tag_name.strip():
-                tag = get_or_create_tag(session, tag_name.strip())
-                item.tags.append(tag)
+                name = tag_name.strip()
+                if name not in seen_tags:
+                    seen_tags.add(name)
+                    item.tags.append(get_or_create_tag(session, name))
 
     return item
 
