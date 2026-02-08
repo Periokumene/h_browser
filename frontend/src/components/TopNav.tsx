@@ -3,18 +3,33 @@ import {
   Flex,
   Heading,
   Spacer,
+  Text,
   useColorModeValue,
   VStack,
 } from "@chakra-ui/react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import type { ListScope } from "../types/api";
 import SidePanel from "./SidePanel";
+
+const PAGE_CENTER: Record<string, string> = {
+  "/": "首页",
+  "/videolib": "媒体库",
+  "/config/media": "媒体库配置",
+};
 
 function TopNav() {
   const borderColor = useColorModeValue("gray.200", "whiteAlpha.200");
   const menuHoverBg = useColorModeValue("gray.100", "whiteAlpha.100");
+  /** 总表/收藏 未激活项：亮色模式用灰，暗色模式用浅白 */
+  const scopeInactiveColor = useColorModeValue("gray.500", "whiteAlpha.800");
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const pathname = location.pathname;
+  const isVideoLib = pathname === "/videolib";
+  const scope: ListScope = isVideoLib && searchParams.get("scope") === "favorites" ? "favorites" : "all";
 
   const settingsEntries = [
     { id: "media", label: "媒体库配置", path: "/config/media" },
@@ -44,6 +59,40 @@ function TopNav() {
         >
           个人影音库
         </Heading>
+        <Spacer />
+        {/* 中部：按路由显示当前页标题或 VideoLib 的 总表/收藏 切换（仅文字，高亮激活项） */}
+        <Flex align="center" gap={3} position="absolute" left="50%" transform="translateX(-50%)">
+          {isVideoLib ? (
+            <Flex role="group" aria-label="列表范围" align="center" gap={3}>
+              <Text
+                as="button"
+                type="button"
+                fontSize="sm"
+                color={scope === "all" ? "app.accent" : scopeInactiveColor}
+                fontWeight={scope === "all" ? 600 : 400}
+                _hover={{ opacity: 0.9 }}
+                onClick={() => navigate("/videolib")}
+              >
+                媒体
+              </Text>
+              <Text
+                as="button"
+                type="button"
+                fontSize="sm"
+                color={scope === "favorites" ? "app.accent" : scopeInactiveColor}
+                fontWeight={scope === "favorites" ? 600 : 400}
+                _hover={{ opacity: 0.9 }}
+                onClick={() => navigate("/videolib?scope=favorites")}
+              >
+                收藏
+              </Text>
+            </Flex>
+          ) : (
+            <Text fontSize="sm" color="app.muted" fontWeight="medium">
+              {PAGE_CENTER[pathname] ?? ""}
+            </Text>
+          )}
+        </Flex>
         <Spacer />
         <Button
           size="sm"

@@ -89,6 +89,22 @@ class Tag(Base):
     )
 
 
+class Favorite(Base):
+    """收藏：媒体条目的子集，与总表共用同一套查询与筛选。"""
+
+    __tablename__ = "favorites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    media_item_id = Column(
+        Integer,
+        ForeignKey("media_items.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    media_item = relationship("MediaItem", back_populates="favorite_record")
+
+
 class MediaItem(Base, TimestampMixin):
     """媒体条目：以番号（code）为业务主键，对应一个 .nfo 及同目录下的 .mp4/.ts。"""
 
@@ -117,6 +133,12 @@ class MediaItem(Base, TimestampMixin):
         "Tag",
         secondary=media_item_tags,
         back_populates="items",
+    )
+    favorite_record = relationship(
+        "Favorite",
+        back_populates="media_item",
+        uselist=False,
+        cascade="all, delete-orphan",
     )
 
 

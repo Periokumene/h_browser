@@ -6,6 +6,7 @@ export interface MediaItem {
   video_type?: string;
   has_video: boolean;
   poster_url?: string;
+  is_favorite?: boolean;
 }
 
 export interface Actor {
@@ -37,10 +38,13 @@ export interface MediaDetail {
   video_type?: string | null;
   has_video: boolean;
   poster_url?: string;
+  is_favorite?: boolean;
   metadata?: Metadata;
 }
 
 export type FilterRuleMode = "and" | "or";
+
+export type ListScope = "all" | "favorites";
 
 export interface ListFilters {
   genres: string[];

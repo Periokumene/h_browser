@@ -15,7 +15,7 @@ from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import and_, exists, or_
 
 from ..config import config
-from ..models import Genre, MediaItem, Tag, get_session, media_item_genres, media_item_tags
+from ..models import Favorite, Genre, MediaItem, Tag, get_session, media_item_genres, media_item_tags
 from ..scanner import scan_media
 from ..services.media_service import (
     get_all_filter_options,
@@ -64,9 +64,14 @@ def get_filters():
 
 @api_bp.route("/items", methods=["GET"])
 def list_items():
-    """分页返回媒体列表，支持 q 按番号/标题搜索，genre/tag 多选过滤；filter_mode: and=交集, or=并集。"""
+    """分页返回媒体列表，与总表/收藏共用本接口。
+    支持 scope：all（默认）总表，favorites 仅收藏；q 搜索；genre/tag 多选过滤；filter_mode: and/or。"""
     page = max(int(request.args.get("page", 1)), 1)
     page_size = min(max(int(request.args.get("page_size", 20)), 1), 100)
+    scope = (request.args.get("scope") or request.args.get("favorite") or "all").strip().lower()
+    if scope not in ("all", "favorites"):
+        scope = "all"
+    only_favorites = scope == "favorites"
     search = (request.args.get("q") or "").strip()
     genres = request.args.getlist("genre") or request.args.getlist("genres") or []
     tags = request.args.getlist("tag") or request.args.getlist("tags") or []
@@ -79,6 +84,8 @@ def list_items():
     db = get_session()
     try:
         query = db.query(MediaItem)
+        if only_favorites:
+            query = query.join(Favorite, Favorite.media_item_id == MediaItem.id)
 
         # 按 genre/tag 过滤
         # 交集(and)：类型需全部具备、标签需全部具备，且类型与标签同时满足
@@ -170,6 +177,13 @@ def list_items():
             .limit(page_size)
             .all()
         )
+        item_ids = [item.id for item in items]
+        favorited_ids = set()
+        if item_ids:
+            for row in db.query(Favorite.media_item_id).filter(
+                Favorite.media_item_id.in_(item_ids)
+            ).all():
+                favorited_ids.add(row[0])
 
         return jsonify(
             {
@@ -183,6 +197,7 @@ def list_items():
                         "video_type": item.video_type,
                         "has_video": bool(item.video_path),
                         "poster_url": f"/api/items/{item.code}/poster",
+                        "is_favorite": item.id in favorited_ids,
                     }
                     for item in items
                 ],
@@ -204,6 +219,7 @@ def get_item(code: str):
         item = full["db_item"]
         metadata = full["nfo_metadata"]
 
+        is_favorite = db.query(Favorite).filter(Favorite.media_item_id == item.id).first() is not None
         payload = {
             "code": item.code,
             "title": item.title,
@@ -211,6 +227,7 @@ def get_item(code: str):
             "video_type": item.video_type,
             "has_video": bool(item.video_path),
             "poster_url": "/api/items/" + item.code + "/poster",
+            "is_favorite": is_favorite,
         }
         if metadata:
             payload["metadata"] = {
@@ -229,6 +246,39 @@ def get_item(code: str):
                 "outline": metadata.outline,
             }
         return jsonify(payload)
+    finally:
+        db.close()
+
+
+@api_bp.route("/items/<string:code>/favorite", methods=["PUT"])
+def set_item_favorite(code: str):
+    """设置或取消收藏。请求体: { "favorite": true | false }。"""
+    data = request.get_json(silent=True) or {}
+    favorite = data.get("favorite")
+    if favorite is None:
+        return jsonify({"error": "请求体须包含 favorite 布尔值"}), 400
+    if not isinstance(favorite, bool):
+        return jsonify({"error": "favorite 须为布尔值"}), 400
+
+    db = get_session()
+    try:
+        item = get_item_by_code(db, code)
+        if item is None:
+            return jsonify({"error": "未找到媒体条目"}), 404
+        existing = db.query(Favorite).filter(Favorite.media_item_id == item.id).first()
+        if favorite:
+            if existing is None:
+                db.add(Favorite(media_item_id=item.id))
+            # else already favorited
+        else:
+            if existing is not None:
+                db.delete(existing)
+        db.commit()
+        return jsonify({"ok": True, "favorite": favorite})
+    except Exception as exc:
+        db.rollback()
+        logging.getLogger(__name__).exception("设置收藏失败")
+        return jsonify({"error": str(exc)}), 500
     finally:
         db.close()
 

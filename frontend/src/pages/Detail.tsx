@@ -22,7 +22,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ListFilters } from "../types/api";
-import { fetchFilters, fetchItem, updateItemMetadata } from "../api/calls";
+import { fetchFilters, fetchItem, setItemFavorite, updateItemMetadata } from "../api/calls";
 import { getBaseUrl } from "../api/client";
 import type { FilterOptionItem, MediaDetail } from "../types/api";
 
@@ -192,6 +192,14 @@ export default function DetailPage() {
       updateItemMetadata(code!, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["item", code] });
+    },
+  });
+
+  const favoriteMutation = useMutation({
+    mutationFn: (favorite: boolean) => setItemFavorite(code!, favorite),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["item", code] });
+      queryClient.invalidateQueries({ queryKey: ["items"] });
     },
   });
 
@@ -413,6 +421,17 @@ export default function DetailPage() {
             <Text fontSize={detailTokens.fontSize.body} color="app.muted">番号 {detail.code}</Text>
           </Flex>
           <Flex align="center" gap={2}>
+            <Button
+              size="sm"
+              variant={detail.is_favorite ? "solid" : "outline"}
+              colorScheme="yellow"
+              aria-label={detail.is_favorite ? "取消收藏" : "收藏"}
+              title={detail.is_favorite ? "取消收藏" : "收藏"}
+              onClick={() => favoriteMutation.mutate(!detail.is_favorite)}
+              isDisabled={favoriteMutation.isPending}
+            >
+              {detail.is_favorite ? "★ 已收藏" : "☆ 收藏"}
+            </Button>
             <Button
               size="sm"
               variant="outline"

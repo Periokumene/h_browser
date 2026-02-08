@@ -18,10 +18,10 @@ import {
 } from "@chakra-ui/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { fetchFilters, fetchItems, postScan } from "../api/calls";
 import { getBaseUrl } from "../api/client";
-import type { FilterRuleMode, ListFilters, MediaItem } from "../types/api";
+import type { FilterRuleMode, ListFilters, ListScope, MediaItem } from "../types/api";
 
 const PAGE_SIZE = 24;
 
@@ -36,7 +36,9 @@ export default function VideoLibPage() {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const scope: ListScope = searchParams.get("scope") === "favorites" ? "favorites" : "all";
 
   // 从详情页点击类型/标签跳转时带入的筛选，应用一次后清除 state
   useEffect(() => {
@@ -59,13 +61,14 @@ export default function VideoLibPage() {
     hasNextPage: hasMore,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ["items", searchSubmitted, filters],
+    queryKey: ["items", scope, searchSubmitted, filters],
     queryFn: ({ pageParam }) =>
       fetchItems({
         page: pageParam,
         page_size: PAGE_SIZE,
         q: searchSubmitted || undefined,
         filters,
+        scope,
       }),
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
@@ -167,22 +170,32 @@ export default function VideoLibPage() {
           <PopoverContent w="auto" minW="280px" maxW="400px" _focus={{ outline: 0 }}>
             <PopoverBody>
               <Stack spacing={4}>
-                <Flex align="center" gap={2}>
+                <Flex align="center" justify="space-between" gap={2}>
+                  <Flex align="center" gap={2}>
+                    <Button
+                      size="xs"
+                      variant={filters.filterMode === "and" ? "solid" : "outline"}
+                      colorScheme="orange"
+                      onClick={() => setFilterMode("and")}
+                    >
+                      交集
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant={filters.filterMode === "or" ? "solid" : "outline"}
+                      colorScheme="orange"
+                      onClick={() => setFilterMode("or")}
+                    >
+                      并集
+                    </Button>
+                  </Flex>
                   <Button
                     size="xs"
-                    variant={filters.filterMode === "and" ? "solid" : "outline"}
-                    colorScheme="orange"
-                    onClick={() => setFilterMode("and")}
+                    variant="ghost"
+                    colorScheme="gray"
+                    onClick={() => handleFilterChange({ genres: [], tags: [], filterMode: "and" })}
                   >
-                    交集
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant={filters.filterMode === "or" ? "solid" : "outline"}
-                    colorScheme="orange"
-                    onClick={() => setFilterMode("or")}
-                  >
-                    并集
+                    清空过滤器
                   </Button>
                 </Flex>
                 <Box>

@@ -1,4 +1,4 @@
-import type { FilterOptions, ItemsListResponse, ListFilters, MediaDetail } from "../types/api";
+import type { FilterOptions, ItemsListResponse, ListFilters, ListScope, MediaDetail } from "../types/api";
 import { apiClient } from "./client";
 
 function serializeParams(params: Record<string, unknown>): string {
@@ -24,11 +24,14 @@ function filtersToParams(filters: ListFilters): Record<string, unknown> {
   return params;
 }
 
+export type { ListScope };
+
 export interface FetchItemsParams {
   page: number;
   page_size: number;
   q?: string;
   filters: ListFilters;
+  scope?: ListScope;
 }
 
 export async function fetchItem(code: string): Promise<MediaDetail> {
@@ -53,13 +56,14 @@ export async function updateItemMetadata(
 }
 
 export async function fetchItems(params: FetchItemsParams): Promise<ItemsListResponse> {
-  const { page, page_size, q, filters } = params;
-  const reqParams = {
+  const { page, page_size, q, filters, scope } = params;
+  const reqParams: Record<string, unknown> = {
     page,
     page_size,
     q: q || undefined,
     ...filtersToParams(filters),
   };
+  if (scope === "favorites") reqParams.scope = "favorites";
   const res = await apiClient.get<ItemsListResponse>("/api/items", {
     params: reqParams,
     paramsSerializer: (p: Record<string, unknown>) => serializeParams(p),
@@ -88,5 +92,13 @@ export async function fetchConfig(): Promise<MediaLibraryConfig> {
 
 export async function updateConfig(payload: Partial<MediaLibraryConfig>): Promise<MediaLibraryConfig> {
   const res = await apiClient.put<MediaLibraryConfig>("/api/config", payload);
+  return res.data;
+}
+
+export async function setItemFavorite(code: string, favorite: boolean): Promise<{ ok: boolean; favorite: boolean }> {
+  const res = await apiClient.put<{ ok: boolean; favorite: boolean }>(
+    `/api/items/${encodeURIComponent(code)}/favorite`,
+    { favorite }
+  );
   return res.data;
 }
