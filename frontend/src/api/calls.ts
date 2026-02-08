@@ -36,6 +36,22 @@ export async function fetchItem(code: string): Promise<MediaDetail> {
   return res.data;
 }
 
+export interface UpdateItemMetadataPayload {
+  genres: string[];
+  tags: string[];
+}
+
+export async function updateItemMetadata(
+  code: string,
+  payload: UpdateItemMetadataPayload
+): Promise<{ ok: boolean }> {
+  const res = await apiClient.patch<{ ok: boolean }>(
+    `/api/items/${encodeURIComponent(code)}/metadata`,
+    payload
+  );
+  return res.data;
+}
+
 export async function fetchItems(params: FetchItemsParams): Promise<ItemsListResponse> {
   const { page, page_size, q, filters } = params;
   const reqParams = {

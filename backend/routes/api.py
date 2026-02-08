@@ -18,9 +18,11 @@ from ..config import config
 from ..models import Genre, MediaItem, Tag, get_session, media_item_genres, media_item_tags
 from ..scanner import scan_media
 from ..services.media_service import (
+    get_all_filter_options,
     get_item_by_code,
     get_item_full_metadata,
     get_poster_path_for_item,
+    update_item_genres_tags,
 )
 
 
@@ -51,15 +53,11 @@ def update_config():
 
 @api_bp.route("/filters", methods=["GET"])
 def get_filters():
-    """返回高级筛选可选值：从数据库查询所有 genre 与 tag。"""
+    """返回高级筛选可选值：所有已知类型与标签（来自 media_service，与编辑元数据时新建的项一致）。"""
     db = get_session()
     try:
-        genres = [g.name for g in db.query(Genre).order_by(Genre.name).all()]
-        tags = [t.name for t in db.query(Tag).order_by(Tag.name).all()]
-        return jsonify({
-            "genres": genres,
-            "tags": tags,
-        })
+        options = get_all_filter_options(db)
+        return jsonify(options)
     finally:
         db.close()
 
@@ -231,6 +229,34 @@ def get_item(code: str):
                 "outline": metadata.outline,
             }
         return jsonify(payload)
+    finally:
+        db.close()
+
+
+@api_bp.route("/items/<string:code>/metadata", methods=["PATCH"])
+def patch_item_metadata(code: str):
+    """更新条目的类型与标签，写回 NFO 并同步数据库。请求体: { "genres": string[], "tags": string[] }。"""
+    data = request.get_json(silent=True) or {}
+    genres = data.get("genres")
+    tags = data.get("tags")
+    if genres is None or tags is None:
+        return jsonify({"error": "请求体须包含 genres 与 tags 数组"}), 400
+    if not isinstance(genres, list) or not isinstance(tags, list):
+        return jsonify({"error": "genres 与 tags 须为数组"}), 400
+    genres = [str(x).strip() for x in genres if x is not None and str(x).strip()]
+    tags = [str(x).strip() for x in tags if x is not None and str(x).strip()]
+
+    db = get_session()
+    try:
+        item = update_item_genres_tags(db, code, genres, tags)
+        if item is None:
+            return jsonify({"error": "未找到条目或 NFO 不可写"}), 404
+        db.commit()
+        return jsonify({"ok": True})
+    except Exception as exc:
+        db.rollback()
+        logging.getLogger(__name__).exception("更新元数据失败")
+        return jsonify({"error": str(exc)}), 500
     finally:
         db.close()
 

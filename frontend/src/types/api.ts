@@ -48,9 +48,14 @@ export interface ListFilters {
   filterMode: FilterRuleMode;
 }
 
+export interface FilterOptionItem {
+  name: string;
+  count: number;
+}
+
 export interface FilterOptions {
-  genres: string[];
-  tags: string[];
+  genres: FilterOptionItem[];
+  tags: FilterOptionItem[];
 }
 
 export interface ItemsListResponse {

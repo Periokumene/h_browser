@@ -18,7 +18,7 @@ import {
 } from "@chakra-ui/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { fetchFilters, fetchItems, postScan } from "../api/calls";
 import { getBaseUrl } from "../api/client";
 import type { FilterRuleMode, ListFilters, MediaItem } from "../types/api";
@@ -35,9 +35,19 @@ export default function VideoLibPage() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
 
-  const { data: filterOptions = { genres: [], tags: [] } } = useQuery({
+  // 从详情页点击类型/标签跳转时带入的筛选，应用一次后清除 state
+  useEffect(() => {
+    const initial = (location.state as { initialFilters?: ListFilters } | null)?.initialFilters;
+    if (initial) {
+      setFilters(initial);
+      navigate("/videolib", { replace: true, state: {} });
+    }
+  }, [location.state, navigate]);
+
+  const { data: filterOptions } = useQuery({
     queryKey: ["filters"],
     queryFn: fetchFilters,
   });
@@ -180,21 +190,24 @@ export default function VideoLibPage() {
                     类型
                   </Text>
                   <Flex gap={2} flexWrap="wrap">
-                    {filterOptions.genres.length === 0 ? (
+                    {(filterOptions?.genres?.length ?? 0) === 0 ? (
                       <Text fontSize="sm" color="app.muted">
                         暂无（请先扫描）
                       </Text>
                     ) : (
-                      filterOptions.genres.map((g) => (
+                      (filterOptions?.genres ?? []).map((g) => (
                         <Badge
-                          key={g}
-                          variant={filters.genres.includes(g) ? "solid" : "subtle"}
+                          key={g.name}
+                          variant={filters.genres.includes(g.name) ? "solid" : "subtle"}
                           colorScheme="orange"
                           cursor="pointer"
-                          onClick={() => toggleGenre(g)}
+                          onClick={() => toggleGenre(g.name)}
                           _hover={{ opacity: 0.9 }}
                         >
-                          {g}
+                          {g.name}
+                          {g.count > 0 && (
+                            <Text as="span" ml={1} opacity={0.8}>({g.count})</Text>
+                          )}
                         </Badge>
                       ))
                     )}
@@ -205,21 +218,24 @@ export default function VideoLibPage() {
                     标签
                   </Text>
                   <Flex gap={2} flexWrap="wrap">
-                    {filterOptions.tags.length === 0 ? (
+                    {(filterOptions?.tags?.length ?? 0) === 0 ? (
                       <Text fontSize="sm" color="app.muted">
                         暂无（请先扫描）
                       </Text>
                     ) : (
-                      filterOptions.tags.map((t) => (
+                      (filterOptions?.tags ?? []).map((t) => (
                         <Badge
-                          key={t}
-                          variant={filters.tags.includes(t) ? "solid" : "outline"}
+                          key={t.name}
+                          variant={filters.tags.includes(t.name) ? "solid" : "outline"}
                           colorScheme="gray"
                           cursor="pointer"
-                          onClick={() => toggleTag(t)}
+                          onClick={() => toggleTag(t.name)}
                           _hover={{ opacity: 0.9 }}
                         >
-                          {t}
+                          {t.name}
+                          {t.count > 0 && (
+                            <Text as="span" ml={1} opacity={0.8}>({t.count})</Text>
+                          )}
                         </Badge>
                       ))
                     )}

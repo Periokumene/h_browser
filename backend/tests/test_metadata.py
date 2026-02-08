@@ -13,6 +13,7 @@ from backend.services.metadata import (
     get_poster_path,
     get_thumb_path,
     parse_nfo,
+    update_nfo_genres_tags,
     VideoMetadata,
 )
 
@@ -182,3 +183,31 @@ def test_only_thumb_no_poster():
         meta = parse_nfo(root / "TEST.nfo")
         assert meta.poster_path is None
         assert meta.thumb == "thumb.jpg"
+
+
+def test_update_nfo_genres_tags():
+    """update_nfo_genres_tags 应正确写回 NFO 中的类型与标签，其余节点不变。"""
+    nfo_initial = """<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+    <title>DASD-701</title>
+    <genre>类型A</genre>
+    <tag>旧标签</tag>
+</movie>
+"""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        nfo_path = root / "DASD-701.nfo"
+        nfo_path.write_text(nfo_initial, encoding="utf-8")
+        update_nfo_genres_tags(nfo_path, ["类型A", "类型B"], ["旧标签", "测试专用"])
+        content = nfo_path.read_text(encoding="utf-8")
+        assert "<genre>类型A</genre>" in content
+        assert "<genre>类型B</genre>" in content
+        assert "<tag>旧标签</tag>" in content
+        assert "<tag>测试专用</tag>" in content
+        assert "<title>DASD-701</title>" in content
+        # 格式：每个 genre/tag 单独成行，不堆在一行
+        lines_with_genre_or_tag = [ln for ln in content.splitlines() if "<genre>" in ln or "<tag>" in ln]
+        assert len(lines_with_genre_or_tag) == 4, "应有 4 行分别为两个 genre 与两个 tag"
+        meta = parse_nfo(nfo_path)
+        assert set(meta.genres) == {"类型A", "类型B"}
+        assert set(meta.tags) == {"旧标签", "测试专用"}

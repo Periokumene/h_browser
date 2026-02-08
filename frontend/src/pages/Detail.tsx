@@ -5,18 +5,26 @@ import {
   Flex,
   Heading,
   Image,
+  Input,
   SimpleGrid,
   Skeleton,
   Stack,
   Text,
   Wrap,
   WrapItem,
+  useOutsideClick,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverBody,
 } from "@chakra-ui/react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { fetchItem } from "../api/calls";
+import type { ListFilters } from "../types/api";
+import { fetchFilters, fetchItem, updateItemMetadata } from "../api/calls";
 import { getBaseUrl } from "../api/client";
-import type { MediaDetail } from "../types/api";
+import type { FilterOptionItem, MediaDetail } from "../types/api";
 
 // ---------- 详情页设计尺度（与 theme 语义色搭配） ----------
 const detailTokens = {
@@ -54,14 +62,163 @@ function MetaLine({
   );
 }
 
+function AddMetaPopover({
+  kind,
+  existingOptions,
+  current,
+  onAdd,
+  triggerLabel,
+}: {
+  kind: string;
+  existingOptions: FilterOptionItem[];
+  current: string[];
+  onAdd: (name: string) => void;
+  triggerLabel: string;
+}) {
+  const [inputVal, setInputVal] = useState("");
+  const quickAdd = existingOptions.filter((o) => !current.includes(o.name));
+  return (
+    <Popover placement="bottom-start" closeOnBlur>
+      <PopoverTrigger>
+        <Box
+          as="button"
+          type="button"
+          aria-label={`添加${kind}`}
+          lineHeight="1"
+          fontSize={detailTokens.fontSize.meta}
+          w="5"
+          h="5"
+          minW="5"
+          minH="5"
+          p={0}
+          display="inline-flex"
+          alignItems="center"
+          justifyContent="center"
+          borderRadius="md"
+          color="app.muted"
+          _hover={{ color: "app.muted.fg", bg: "whiteAlpha.200" }}
+          transition="color 0.2s, background 0.2s"
+        >
+          {triggerLabel}
+        </Box>
+      </PopoverTrigger>
+      <PopoverContent w="auto" minW="280px" maxW="420px" _focus={{ outline: 0 }}>
+        <PopoverBody>
+          <Text fontSize="xs" color="app.muted" mb={2}>
+            从已有项添加或键入新建
+          </Text>
+          {quickAdd.length > 0 && (
+            <Wrap spacing={2} mb={3} maxH="200px" overflowY="auto">
+              {quickAdd.map((opt) => (
+                <WrapItem key={opt.name}>
+                  <Badge
+                    as="button"
+                    type="button"
+                    variant="outline"
+                    colorScheme="gray"
+                    fontSize={detailTokens.fontSize.meta}
+                    borderRadius={detailTokens.radius.badge}
+                    cursor="pointer"
+                    _hover={{ bg: "whiteAlpha.200" }}
+                    onClick={() => {
+                      onAdd(opt.name);
+                      setInputVal("");
+                    }}
+                  >
+                    {opt.name}
+                  </Badge>
+                </WrapItem>
+              ))}
+            </Wrap>
+          )}
+          <Flex gap={2}>
+            <Input
+              size="sm"
+              placeholder={`新建${kind}`}
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const v = inputVal.trim();
+                  if (v) {
+                    onAdd(v);
+                    setInputVal("");
+                  }
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                const v = inputVal.trim();
+                if (v) {
+                  onAdd(v);
+                  setInputVal("");
+                }
+              }}
+            >
+              添加
+            </Button>
+          </Flex>
+        </PopoverBody>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function DetailPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const metaEditRef = useRef<HTMLDivElement>(null);
+  const [isEditingMeta, setIsEditingMeta] = useState(false);
+  const [localGenres, setLocalGenres] = useState<string[]>([]);
+  const [localTags, setLocalTags] = useState<string[]>([]);
 
   const { data: item, isLoading: loading, isError, error } = useQuery({
     queryKey: ["item", code],
     queryFn: () => fetchItem(code!),
     enabled: !!code,
+  });
+
+  const { data: filterOptions } = useQuery({
+    queryKey: ["filters"],
+    queryFn: fetchFilters,
+    enabled: isEditingMeta,
+  });
+
+  const updateMetaMutation = useMutation({
+    mutationFn: (payload: { genres: string[]; tags: string[] }) =>
+      updateItemMetadata(code!, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["item", code] });
+    },
+  });
+
+  useOutsideClick({
+    ref: metaEditRef,
+    handler: (e) => {
+      const target = e?.target as HTMLElement | null;
+      if (target?.closest?.("[role='dialog'], [data-popper-placement], [data-popper-reference-hidden]") ?? false) return;
+      if (!isEditingMeta) return;
+      const meta = (item as MediaDetail | undefined)?.metadata;
+      const sameGenres = JSON.stringify(localGenres) === JSON.stringify(meta?.genres ?? []);
+      const sameTags = JSON.stringify(localTags) === JSON.stringify(meta?.tags ?? []);
+      if (!sameGenres || !sameTags) {
+        updateMetaMutation.mutate(
+          { genres: localGenres, tags: localTags },
+          {
+            onSuccess: () => setIsEditingMeta(false),
+            onError: () => {
+              // 保存失败时保持编辑态，便于用户重试
+            },
+          }
+        );
+      } else {
+        setIsEditingMeta(false);
+      }
+    },
+    enabled: isEditingMeta,
   });
 
   if (loading) {
@@ -255,18 +412,32 @@ export default function DetailPage() {
             )}
             <Text fontSize={detailTokens.fontSize.body} color="app.muted">番号 {detail.code}</Text>
           </Flex>
-          {detail.has_video ? (
+          <Flex align="center" gap={2}>
             <Button
               size="sm"
-              colorScheme="orange"
-              leftIcon={<Text>▶</Text>}
-              onClick={() => navigate(`/play/${encodeURIComponent(detail.code)}`)}
+              variant="outline"
+              colorScheme="gray"
+              onClick={() => {
+                setLocalGenres(detail.metadata?.genres ?? []);
+                setLocalTags(detail.metadata?.tags ?? []);
+                setIsEditingMeta(true);
+              }}
             >
-              播放
+              编辑元数据
             </Button>
-          ) : (
-            <Badge colorScheme="red" borderRadius={detailTokens.radius.badge}>无视频</Badge>
-          )}
+            {detail.has_video ? (
+              <Button
+                size="sm"
+                colorScheme="orange"
+                leftIcon={<Text>▶</Text>}
+                onClick={() => navigate(`/play/${encodeURIComponent(detail.code)}`)}
+              >
+                播放
+              </Button>
+            ) : (
+              <Badge colorScheme="red" borderRadius={detailTokens.radius.badge}>无视频</Badge>
+            )}
+          </Flex>
         </Flex>
       </Flex>
 
@@ -282,42 +453,156 @@ export default function DetailPage() {
             </Box>
           ) : null}
 
-          {/* 第二组：类型 / 标签（仅在有内容时渲染整组，组内 itemGap） */}
-          {(meta?.genres?.length || meta?.tags?.length) ? (
-            <Stack spacing={detailTokens.itemGap}>
-              {meta?.genres?.length ? (
+          {/* 第二组：类型 / 标签（有内容或编辑态时渲染；编辑态可删、可加） */}
+          {(meta?.genres?.length || meta?.tags?.length || isEditingMeta) ? (
+            <Box ref={metaEditRef}>
+              <Stack spacing={detailTokens.itemGap}>
+                {/* 类型行 */}
                 <Flex align="center" flexWrap="wrap" gap={detailTokens.space.tight}>
                   <Text as="span" fontSize={detailTokens.fontSize.body} color="app.muted" flexShrink={0}>
                     类型:
                   </Text>
-                  <Wrap spacing={detailTokens.space.tight}>
-                    {meta.genres.map((g) => (
+                  <Wrap spacing={detailTokens.space.tight} align="center">
+                    {(isEditingMeta ? localGenres : meta?.genres ?? []).map((g) => (
                       <WrapItem key={g}>
-                        <Badge colorScheme="orange" variant="subtle" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
+                        <Badge
+                          as={isEditingMeta ? undefined : "button"}
+                          colorScheme="orange"
+                          variant="subtle"
+                          borderRadius={detailTokens.radius.badge}
+                          fontSize={detailTokens.fontSize.meta}
+                          display="inline-flex"
+                          alignItems="center"
+                          gap={1}
+                          pr={isEditingMeta ? 1 : 2}
+                          cursor={isEditingMeta ? undefined : "pointer"}
+                          _hover={isEditingMeta ? undefined : { opacity: 0.9 }}
+                          onClick={
+                            isEditingMeta
+                              ? undefined
+                              : () => {
+                                  const nextFilters: ListFilters = {
+                                    genres: [g],
+                                    tags: [],
+                                    filterMode: "and",
+                                  };
+                                  navigate("/videolib", { state: { initialFilters: nextFilters } });
+                                }
+                          }
+                        >
                           {g}
+                          {isEditingMeta && (
+                            <Box
+                              as="span"
+                              cursor="pointer"
+                              aria-label={`删除类型 ${g}`}
+                              onClick={() => {
+                                const next = localGenres.filter((x) => x !== g);
+                                setLocalGenres(next);
+                                updateMetaMutation.mutate({ genres: next, tags: localTags });
+                              }}
+                              _hover={{ color: "orange.400" }}
+                              transition="color 0.2s"
+                            >
+                              ×
+                            </Box>
+                          )}
                         </Badge>
                       </WrapItem>
                     ))}
+                    {isEditingMeta && (
+                      <WrapItem>
+                        <AddMetaPopover
+                          kind="类型"
+                          existingOptions={filterOptions?.genres ?? []}
+                          current={localGenres}
+                          onAdd={(name) => {
+                            const t = name.trim();
+                            if (!t || localGenres.includes(t)) return;
+                            const next = [...localGenres, t];
+                            setLocalGenres(next);
+                            updateMetaMutation.mutate({ genres: next, tags: localTags });
+                          }}
+                          triggerLabel="+"
+                        />
+                      </WrapItem>
+                    )}
                   </Wrap>
                 </Flex>
-              ) : null}
-              {meta?.tags?.length ? (
+                {/* 标签行 */}
                 <Flex align="center" flexWrap="wrap" gap={detailTokens.space.tight}>
                   <Text as="span" fontSize={detailTokens.fontSize.body} color="app.muted" flexShrink={0}>
                     标签:
                   </Text>
-                  <Wrap spacing={detailTokens.space.tight}>
-                    {meta.tags.map((t) => (
+                  <Wrap spacing={detailTokens.space.tight} align="center">
+                    {(isEditingMeta ? localTags : meta?.tags ?? []).map((t) => (
                       <WrapItem key={t}>
-                        <Badge variant="outline" colorScheme="gray" borderRadius={detailTokens.radius.badge} fontSize={detailTokens.fontSize.meta}>
+                        <Badge
+                          as={isEditingMeta ? undefined : "button"}
+                          variant="subtle"
+                          colorScheme="gray"
+                          borderRadius={detailTokens.radius.badge}
+                          fontSize={detailTokens.fontSize.meta}
+                          display="inline-flex"
+                          alignItems="center"
+                          gap={1}
+                          pr={isEditingMeta ? 1 : 2}
+                          cursor={isEditingMeta ? undefined : "pointer"}
+                          _hover={isEditingMeta ? undefined : { opacity: 0.9 }}
+                          onClick={
+                            isEditingMeta
+                              ? undefined
+                              : () => {
+                                  const nextFilters: ListFilters = {
+                                    genres: [],
+                                    tags: [t],
+                                    filterMode: "and",
+                                  };
+                                  navigate("/videolib", { state: { initialFilters: nextFilters } });
+                                }
+                          }
+                        >
                           {t}
+                          {isEditingMeta && (
+                            <Box
+                              as="span"
+                              cursor="pointer"
+                              aria-label={`删除标签 ${t}`}
+                              onClick={() => {
+                                const next = localTags.filter((x) => x !== t);
+                                setLocalTags(next);
+                                updateMetaMutation.mutate({ genres: localGenres, tags: next });
+                              }}
+                              _hover={{ color: "red.400" }}
+                              transition="color 0.2s"
+                            >
+                              ×
+                            </Box>
+                          )}
                         </Badge>
                       </WrapItem>
                     ))}
+                    {isEditingMeta && (
+                      <WrapItem>
+                        <AddMetaPopover
+                          kind="标签"
+                          existingOptions={filterOptions?.tags ?? []}
+                          current={localTags}
+                          onAdd={(name) => {
+                            const s = name.trim();
+                            if (!s || localTags.includes(s)) return;
+                            const next = [...localTags, s];
+                            setLocalTags(next);
+                            updateMetaMutation.mutate({ genres: localGenres, tags: next });
+                          }}
+                          triggerLabel="+"
+                        />
+                      </WrapItem>
+                    )}
                   </Wrap>
                 </Flex>
-              ) : null}
-            </Stack>
+              </Stack>
+            </Box>
           ) : null}
 
           {/* 第三组：导演 / 制片 / 国家·地区 / 上映（仅渲染有值的项，组内 itemGap） */}

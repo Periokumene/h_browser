@@ -259,6 +259,50 @@ def get_thumb_path(nfo_path: Path, code: str, metadata: VideoMetadata) -> Option
     return _resolve_art_path(nfo_dir, candidate, code, _thumb_fallback_names(code))
 
 
+def update_nfo_genres_tags(nfo_path: Path, genres: List[str], tags: List[str]) -> None:
+    """将类型（genres）与标签（tags）写回 NFO 文件，保留其余节点不变。
+
+    - <genre> 与 <tag> 作为根元素（如 <movie>）的直接子元素，结构正确。
+    - 写回前对整棵树做缩进，使每个元素单独成行、格式统一美观。
+    """
+    if not nfo_path.exists():
+        raise FileNotFoundError(f"NFO 不存在: {nfo_path}")
+    try:
+        tree = ET.parse(nfo_path)
+        root = tree.getroot()
+    except Exception as exc:
+        logger.warning("解析 NFO 失败（写回前）: %s (%s)", nfo_path, exc)
+        raise
+
+    # 移除已有的 genre/tag，避免重复或顺序错乱
+    for el in list(root.findall("genre")):
+        root.remove(el)
+    for el in list(root.findall("tag")):
+        root.remove(el)
+
+    # 在根节点下追加：先所有 genre，再所有 tag（均为根的直接子项）
+    for g in genres:
+        if g and str(g).strip():
+            el = ET.SubElement(root, "genre")
+            el.text = str(g).strip()
+    for t in tags:
+        if t and str(t).strip():
+            el = ET.SubElement(root, "tag")
+            el.text = str(t).strip()
+
+    # 统一缩进，使每个子元素单独成行、不堆在一行
+    ET.indent(tree, space="    ", level=0)
+
+    # 使用 str(path) 确保跨平台（尤其 Windows）正确写回
+    tree.write(
+        str(nfo_path),
+        encoding="utf-8",
+        xml_declaration=True,
+        default_namespace=None,
+        method="xml",
+    )
+
+
 # ---------------------------------------------------------------------------
 # 可选：未来接入数据库缓存的提供者抽象（此处仅预留，不实现）
 # ---------------------------------------------------------------------------

@@ -3,9 +3,9 @@
 提供统一的接口访问媒体数据，封装数据库读写与磁盘/NFO 读取，便于未来扩展缓存、增量同步等功能。
 
 职责划分：
-- 数据库操作：MediaItem、Genre、Tag 的 CRUD
-- 磁盘操作：NFO 解析、视频文件查找、海报路径解析
-- 数据同步：磁盘 → 数据库的同步逻辑
+- 数据库操作：MediaItem、Genre、Tag 的 CRUD；「所有已知类型/标签」通过 get_all_filter_options 统一提供
+- 磁盘操作：通过 metadata 模块做 NFO 解析与艺术路径解析，本模块仅做文件查找与封装
+- 数据同步：磁盘 → 数据库的同步逻辑；新建类型/标签经 get_or_create_* 写入 DB，即进入「已知」列表
 - 元数据获取：统一返回完整元数据（DB + NFO）
 """
 from __future__ import annotations
@@ -13,11 +13,12 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
+from sqlalchemy import exists, func
 from sqlalchemy.orm import Session
 
-from ..models import Genre, MediaItem, Tag
+from ..models import Genre, MediaItem, Tag, media_item_genres, media_item_tags
 from .metadata import (
     ActorInfo,
     VideoMetadata,
@@ -25,6 +26,7 @@ from .metadata import (
     get_poster_path,
     get_thumb_path,
     parse_nfo,
+    update_nfo_genres_tags,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,31 @@ def load_metadata_from_nfo(nfo_path: Path) -> Optional[VideoMetadata]:
 # ---------------------------------------------------------------------------
 # 数据库操作：Genre/Tag 辅助
 # ---------------------------------------------------------------------------
+
+
+def get_all_filter_options(session: Session) -> dict:
+    """返回当前数据库中所有类型与标签，并统计每个类型/标签被多少条视频使用。
+
+    用于筛选器、编辑元数据时的「已有项」；新建类型/标签通过 get_or_create_* 写入同一 DB。
+    返回格式：{"genres": [{"name": str, "count": int}, ...], "tags": [...]}，按 name 排序。"""
+    genre_rows = (
+        session.query(Genre.name, func.count(media_item_genres.c.media_item_id).label("count"))
+        .outerjoin(media_item_genres, Genre.id == media_item_genres.c.genre_id)
+        .group_by(Genre.id, Genre.name)
+        .order_by(Genre.name)
+        .all()
+    )
+    tag_rows = (
+        session.query(Tag.name, func.count(media_item_tags.c.media_item_id).label("count"))
+        .outerjoin(media_item_tags, Tag.id == media_item_tags.c.tag_id)
+        .group_by(Tag.id, Tag.name)
+        .order_by(Tag.name)
+        .all()
+    )
+    return {
+        "genres": [{"name": name, "count": count} for name, count in genre_rows],
+        "tags": [{"name": name, "count": count} for name, count in tag_rows],
+    }
 
 
 def get_or_create_genre(session: Session, name: str) -> Genre:
@@ -145,26 +172,19 @@ def create_or_update_item(
     item.file_mtime = file_mtime
     item.last_scanned_at = last_scanned_at
 
-    # 更新 title/description（优先从 metadata，否则从 NFO 简单解析）
+    # 更新 title/description（优先用传入的 metadata，否则从 NFO 解析，避免与 metadata 模块重复逻辑）
     if metadata:
         if metadata.title:
             item.title = metadata.title
         if metadata.plot:
             item.description = metadata.plot
     else:
-        # 简单解析 title/plot（避免重复 parse_nfo）
-        try:
-            import xml.etree.ElementTree as ET
-            tree = ET.parse(nfo_path)
-            root = tree.getroot()
-            title = root.findtext("title")
-            plot = root.findtext("plot")
-            if title:
-                item.title = title
-            if plot:
-                item.description = plot
-        except Exception:  # noqa: BLE001
-            pass
+        nfo_meta = load_metadata_from_nfo(nfo_path)
+        if nfo_meta:
+            if nfo_meta.title:
+                item.title = nfo_meta.title
+            if nfo_meta.plot:
+                item.description = nfo_meta.plot
 
     # 更新 genres/tags 关联
     if metadata:
@@ -180,6 +200,53 @@ def create_or_update_item(
             if tag_name and tag_name.strip():
                 tag = get_or_create_tag(session, tag_name.strip())
                 item.tags.append(tag)
+
+    return item
+
+
+def update_item_genres_tags(
+    session: Session,
+    code: str,
+    genres: list[str],
+    tags: list[str],
+) -> Optional[MediaItem]:
+    """更新条目的类型与标签：写回 NFO 并同步数据库关联。
+
+    新名称会通过 get_or_create_genre / get_or_create_tag 写入 DB，即成为「所有已知类型/标签」的一部分，
+    筛选接口 get_all_filter_options 会包含它们，无需额外同步。
+    返回更新后的 MediaItem，不存在或 NFO 不可写时返回 None。
+    """
+    item = get_item_by_code(session, code)
+    if item is None:
+        return None
+    nfo_path = Path(item.nfo_path) if item.nfo_path else None
+    if not nfo_path or not nfo_path.exists():
+        return None
+
+    genres = [g.strip() for g in genres if g and str(g).strip()]
+    tags = [t.strip() for t in tags if t and str(t).strip()]
+
+    try:
+        update_nfo_genres_tags(nfo_path, genres, tags)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("写回 NFO 类型/标签失败: %s (%s)", nfo_path, exc)
+        return None
+
+    item.genres.clear()
+    item.tags.clear()
+    for name in genres:
+        item.genres.append(get_or_create_genre(session, name))
+    for name in tags:
+        item.tags.append(get_or_create_tag(session, name))
+    session.flush()
+
+    # 删除使用数为 0 的类型/标签，避免数据库堆积无效项
+    session.query(Genre).filter(
+        ~exists().where(media_item_genres.c.genre_id == Genre.id)
+    ).delete(synchronize_session=False)
+    session.query(Tag).filter(
+        ~exists().where(media_item_tags.c.tag_id == Tag.id)
+    ).delete(synchronize_session=False)
 
     return item
 
@@ -217,8 +284,12 @@ def get_item_full_metadata(session: Session, code: str) -> Optional[dict]:
     }
 
 
-def get_poster_path_for_item(session: Session, code: str) -> Optional[Path]:
-    """获取指定番号的海报路径（从数据库读取 NFO 路径，解析海报）。"""
+def _resolve_art_path_for_item(
+    session: Session,
+    code: str,
+    resolver: Callable[[Path, str, VideoMetadata], Optional[Path]],
+) -> Optional[Path]:
+    """根据番号解析 NFO 与元数据，再通过 resolver(nfo_path, code, metadata) 得到艺术资源路径。"""
     full = get_item_full_metadata(session, code)
     if not full or not full["nfo_path"]:
         return None
@@ -228,35 +299,22 @@ def get_poster_path_for_item(session: Session, code: str) -> Optional[Path]:
         metadata = load_metadata_from_nfo(nfo_path)
     if metadata is None:
         return None
-    return get_poster_path(nfo_path, code, metadata)
+    return resolver(nfo_path, code, metadata)
+
+
+def get_poster_path_for_item(session: Session, code: str) -> Optional[Path]:
+    """获取指定番号的海报路径（从数据库读取 NFO 路径，解析海报）。"""
+    return _resolve_art_path_for_item(session, code, get_poster_path)
 
 
 def get_fanart_path_for_item(session: Session, code: str) -> Optional[Path]:
     """获取指定番号的 fanart 路径。"""
-    full = get_item_full_metadata(session, code)
-    if not full or not full["nfo_path"]:
-        return None
-    nfo_path = full["nfo_path"]
-    metadata = full["nfo_metadata"]
-    if metadata is None:
-        metadata = load_metadata_from_nfo(nfo_path)
-    if metadata is None:
-        return None
-    return get_fanart_path(nfo_path, code, metadata)
+    return _resolve_art_path_for_item(session, code, get_fanart_path)
 
 
 def get_thumb_path_for_item(session: Session, code: str) -> Optional[Path]:
     """获取指定番号的 thumb 路径。"""
-    full = get_item_full_metadata(session, code)
-    if not full or not full["nfo_path"]:
-        return None
-    nfo_path = full["nfo_path"]
-    metadata = full["nfo_metadata"]
-    if metadata is None:
-        metadata = load_metadata_from_nfo(nfo_path)
-    if metadata is None:
-        return None
-    return get_thumb_path(nfo_path, code, metadata)
+    return _resolve_art_path_for_item(session, code, get_thumb_path)
 
 
 # ---------------------------------------------------------------------------
