@@ -118,6 +118,8 @@ class Config:
     SECRET_KEY: str = os.getenv("SECRET_KEY", "dev-secret-change-me")
     SCAN_ON_STARTUP: bool = os.getenv("SCAN_ON_STARTUP", "1") == "1"
     HLS_SEGMENT_BYTES: int = int(os.getenv("HLS_SEGMENT_BYTES", str(2 * 1024 * 1024)))
+    # 日志级别：环境变量 LOG_LEVEL，可选 DEBUG / INFO / WARNING / ERROR，默认 INFO
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
 
 config = Config()

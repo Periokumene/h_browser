@@ -20,8 +20,22 @@ from .routes.api import api_bp
 from .scanner import scan_media
 
 
+def _configure_logging() -> None:
+    """根据 config.LOG_LEVEL 配置根 logger（仅首次生效，由 basicConfig 保证）。"""
+    level_name = getattr(logging, config.LOG_LEVEL, None)
+    if not isinstance(level_name, int):
+        level_name = getattr(logging, "INFO", logging.INFO)
+    logging.basicConfig(
+        level=level_name,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
+
+
 def create_app() -> Flask:
     """创建并配置 Flask 应用实例，注册蓝本、初始化 DB、可选启动扫描。"""
+    _configure_logging()
     # 启动时自检 ffprobe，用于 HLS 精确时长；失败则 m3u8 退化为固定 #EXTINF:4.0
     config.set_ffprobe_available(check_ffprobe_available(config.ffprobe_path))
     logging.getLogger(__name__).info("ffprobe 自检: %s", "可用" if config.ffprobe_available else "不可用，使用固定 EXTINF")
@@ -59,8 +73,9 @@ def _run_initial_scan() -> None:
         db.close()
 
 
-if __name__ == "__main__":
-    app = create_app()
-    # 绑定 0.0.0.0 以便局域网访问
-    app.run(host="0.0.0.0", port=5000, debug=True)
+# 统一使用flask方式启动
+# if __name__ == "__main__":
+#     app = create_app()
+#     # 绑定 0.0.0.0 以便局域网访问
+#     app.run(host="0.0.0.0", port=5000, debug=True)
 
