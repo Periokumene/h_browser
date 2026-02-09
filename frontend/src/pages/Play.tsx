@@ -6,6 +6,34 @@ import { useParams } from "react-router-dom";
 import { fetchItem } from "../api/calls";
 import { getBaseUrl } from "../api/client";
 
+type HlsErrorData = {
+  fatal?: boolean;
+  type?: string;
+  details?: string;
+  reason?: string;
+  response?: { code?: number };
+};
+
+function showHlsFatalToast(
+  toast: ReturnType<typeof useToast>,
+  data: HlsErrorData
+) {
+  const detail = [
+    data.type,
+    data.details,
+    data.response?.code != null ? `HTTP ${data.response.code}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  console.error("HLS fatal error:", data);
+  toast({
+    title: "HLS 加载失败",
+    description: detail || undefined,
+    status: "error",
+    duration: 8000,
+  });
+}
+
 export default function PlayPage() {
   const { code } = useParams<{ code: string }>();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -61,16 +89,28 @@ export default function PlayPage() {
         hls.attachMedia(video);
         const onReady = () => video.play().catch(() => {});
         hls.on(Hls.Events.MANIFEST_PARSED, onReady);
-        hls.on(Hls.Events.ERROR, (_event: string, data: { fatal?: boolean; type?: string; details?: string; response?: { code?: number } }) => {
-          if (data.fatal) {
-            const detail = [data.type, data.details, data.response?.code != null ? `HTTP ${data.response.code}` : ""].filter(Boolean).join(" ");
-            console.error("HLS fatal error:", data);
-            toast({
-              title: "HLS 加载失败",
-              description: detail || undefined,
-              status: "error",
-              duration: 8000,
-            });
+        hls.on(Hls.Events.ERROR, (_event: string, data: HlsErrorData) => {
+          // 可能是高并发期间引发的
+          // 若恢复后仍经常失败，可以再考虑：
+          // 在后端对 /api/stream/<code> 的 Range 处理做校验（确保返回范围与 playlist 中 byterange 一致），或
+          // 在前端在恢复失败时做一次 重新 loadSource + 恢复 currentTime 的二次兜底（需要再加一层状态/计时逻辑）。
+          if (!data.fatal) return;
+          const isFragParsingError =
+            data.type === "mediaError" && data.details === "fragParsingError";
+          if (isFragParsingError) {
+            console.warn("HLS fragParsingError (e.g. seek), attempting recovery:", data.reason ?? data.details);
+            try {
+              hls.recoverMediaError();
+              toast({
+                title: "正在重试播放…",
+                status: "info",
+                duration: 3000,
+              });
+            } catch {
+              showHlsFatalToast(toast, data);
+            }
+          } else {
+            showHlsFatalToast(toast, data);
           }
         });
         return () => {
