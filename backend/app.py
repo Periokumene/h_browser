@@ -14,6 +14,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from .config import config
+from .ffprobe_util import check_ffprobe_available
 from .models import get_session, init_db
 from .routes.api import api_bp
 from .scanner import scan_media
@@ -21,6 +22,10 @@ from .scanner import scan_media
 
 def create_app() -> Flask:
     """创建并配置 Flask 应用实例，注册蓝本、初始化 DB、可选启动扫描。"""
+    # 启动时自检 ffprobe，用于 HLS 精确时长；失败则 m3u8 退化为固定 #EXTINF:4.0
+    config.set_ffprobe_available(check_ffprobe_available(config.ffprobe_path))
+    logging.getLogger(__name__).info("ffprobe 自检: %s", "可用" if config.ffprobe_available else "不可用，使用固定 EXTINF")
+
     app = Flask(__name__)
     app.config["SECRET_KEY"] = config.SECRET_KEY
 

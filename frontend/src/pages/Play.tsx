@@ -38,6 +38,7 @@ export default function PlayPage() {
   const { code } = useParams<{ code: string }>();
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const reinitDoneRef = useRef(false);
   const toast = useToast();
 
   const { data: item, isLoading: loading, isError, error } = useQuery({
@@ -75,48 +76,77 @@ export default function PlayPage() {
     if (isTs) {
       const url = m3u8Url();
       if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          fragLoadingMaxRetry: 3,
-          manifestLoadingMaxRetry: 2,
-          xhrSetup: (xhr) => {
-            xhr.withCredentials = true;
-          },
-        });
-        hlsRef.current = hls;
-        hls.loadSource(url);
-        hls.attachMedia(video);
+        reinitDoneRef.current = false;
+
+        const createHls = (startPosition?: number): Hls => {
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            fragLoadingMaxRetry: 3,
+            manifestLoadingMaxRetry: 2,
+            startPosition: startPosition ?? -1,
+            xhrSetup: (xhr) => {
+              xhr.withCredentials = true;
+            },
+          });
+          hls.loadSource(url);
+          hls.attachMedia(video);
+          return hls;
+        };
+
         const onReady = () => video.play().catch(() => {});
-        hls.on(Hls.Events.MANIFEST_PARSED, onReady);
-        hls.on(Hls.Events.ERROR, (_event: string, data: HlsErrorData) => {
-          // 可能是高并发期间引发的
-          // 若恢复后仍经常失败，可以再考虑：
-          // 在后端对 /api/stream/<code> 的 Range 处理做校验（确保返回范围与 playlist 中 byterange 一致），或
-          // 在前端在恢复失败时做一次 重新 loadSource + 恢复 currentTime 的二次兜底（需要再加一层状态/计时逻辑）。
+
+        const setupHlsListeners = (hls: Hls) => {
+          hls.off(Hls.Events.MANIFEST_PARSED, onReady);
+          hls.off(Hls.Events.ERROR, onError);
+          hls.on(Hls.Events.MANIFEST_PARSED, onReady);
+          hls.on(Hls.Events.ERROR, onError);
+        };
+
+        const onError = (_event: string, data: HlsErrorData) => {
           if (!data.fatal) return;
           const isFragParsingError =
             data.type === "mediaError" && data.details === "fragParsingError";
-          if (isFragParsingError) {
-            console.warn("HLS fragParsingError (e.g. seek), attempting recovery:", data.reason ?? data.details);
-            try {
-              hls.recoverMediaError();
-              toast({
-                title: "正在重试播放…",
-                status: "info",
-                duration: 3000,
-              });
-            } catch {
-              showHlsFatalToast(toast, data);
+          if (isFragParsingError && !reinitDoneRef.current) {
+            reinitDoneRef.current = true;
+            const current = hlsRef.current;
+            if (current) {
+              try {
+                current.detachMedia();
+                current.destroy();
+              } catch (_) {
+                /* ignore */
+              }
+              hlsRef.current = null;
             }
-          } else {
-            showHlsFatalToast(toast, data);
+            const newHls = createHls(video.currentTime);
+            hlsRef.current = newHls;
+            setupHlsListeners(newHls);
+            toast({
+              title: "正在从当前位置恢复播放…",
+              status: "info",
+              duration: 3000,
+            });
+            return;
           }
-        });
+          showHlsFatalToast(toast, data);
+        };
+
+        const hls = createHls();
+        hlsRef.current = hls;
+        setupHlsListeners(hls);
+
         return () => {
-          hls.off(Hls.Events.MANIFEST_PARSED, onReady);
-          hls.destroy();
-          hlsRef.current = null;
+          const current = hlsRef.current;
+          if (current) {
+            try {
+              current.detachMedia();
+            } catch (_) {
+              /* ignore */
+            }
+            current.destroy();
+            hlsRef.current = null;
+          }
         };
       }
       if (video.canPlayType("application/vnd.apple.mpegurl")) {

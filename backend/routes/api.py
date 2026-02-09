@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,7 @@ from flask import Blueprint, Response, jsonify, request, send_file
 from sqlalchemy import and_, exists, or_
 
 from ..config import config
+from ..ffprobe_util import get_duration as ffprobe_get_duration
 from ..models import Favorite, Genre, MediaItem, Tag, get_session, media_item_genres, media_item_tags
 from ..scanner import scan_media
 from ..services.media_service import (
@@ -427,25 +429,49 @@ def stream_playlist_m3u8(code: str) -> Response:
         if segment_bytes < TS_PACKET_SIZE:
             segment_bytes = TS_PACKET_SIZE
 
+        # 先算出所有分片 (offset, chunk)，用于统一计算 EXTINF
+        segments: list[tuple[int, int]] = []
+        offset = 0
+        while offset < size:
+            remaining = size - offset
+            chunk = min(segment_bytes, remaining)
+            chunk = (chunk // TS_PACKET_SIZE) * TS_PACKET_SIZE
+            if chunk == 0:
+                break
+            segments.append((offset, chunk))
+            offset += chunk
+
+        # 精确时长：启动自检通过时用 ffprobe 获取总时长并按字节比例分配每段；超时或失败则退化为固定 4.0
+        extinf_durations: list[float]
+        target_duration_int: int
+        if config.ffprobe_available and segments:
+            total_duration = ffprobe_get_duration(file_path, config.ffprobe_path)
+            if total_duration is not None and total_duration > 0:
+                extinf_durations = [
+                    round(total_duration * (chunk / size), 1) for _, chunk in segments
+                ]
+                # 避免 0 或过小导致播放器异常，最小 0.1
+                extinf_durations = [max(0.1, d) for d in extinf_durations]
+                target_duration_int = max(1, math.ceil(max(extinf_durations)))
+            else:
+                extinf_durations = [4.0] * len(segments)
+                target_duration_int = 5
+        else:
+            extinf_durations = [4.0] * len(segments)
+            target_duration_int = 5
+
         base_url = request.host_url.rstrip("/")
         segment_url = f"{base_url}/api/stream/{code}"
 
         lines = [
             "#EXTM3U",
             "#EXT-X-VERSION:4",
-            "#EXT-X-TARGETDURATION:5",
+            "#EXT-X-TARGETDURATION:%d" % target_duration_int,
         ]
-        offset = 0
-        while offset < size:
-            remaining = size - offset
-            chunk = min(segment_bytes, remaining)
-            chunk = (chunk // TS_PACKET_SIZE) * TS_PACKET_SIZE  # 不截断到包中间
-            if chunk == 0:
-                break
-            lines.append("#EXTINF:4.0,")
-            lines.append("#EXT-X-BYTERANGE:%d@%d" % (chunk, offset))
+        for (seg_offset, seg_chunk), dur in zip(segments, extinf_durations):
+            lines.append("#EXTINF:%.1f," % dur)
+            lines.append("#EXT-X-BYTERANGE:%d@%d" % (seg_chunk, seg_offset))
             lines.append(segment_url)
-            offset += chunk
         lines.append("#EXT-X-ENDLIST")
         body = "\n".join(lines) + "\n"
 
