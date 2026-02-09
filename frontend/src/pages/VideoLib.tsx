@@ -12,6 +12,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   SimpleGrid,
+  Skeleton,
   Spinner,
   Stack,
   Text,
@@ -46,6 +47,63 @@ function searchParamsFromFilters(prev: URLSearchParams, filters: ListFilters): U
 }
 
 const SCROLL_STORAGE_KEY = "videolib_scroll";
+
+const CARD_MAX_W = "min(320px, 26vw)";
+const GRID_SX = {
+  gridTemplateColumns: "repeat(auto-fill, minmax(200px, min(320px, 26vw)))",
+  justifyContent: "center",
+};
+
+/** 卡片骨架：与真实卡片布局一致，用于首屏与加载更多占位 */
+function CardSkeleton() {
+  return (
+    <Box w="100%" maxW={CARD_MAX_W} borderWidth="1px" borderColor="app.border" borderRadius="md" overflow="hidden" bg="app.surface" display="flex" flexDirection="column">
+      <Skeleton aspectRatio="2/3" flexShrink={0} startColor="app.surface.subtle" endColor="whiteAlpha.200" />
+      <Box p={3} flex={1} display="flex" flexDirection="column" minH={0}>
+        <Skeleton height="4" width="90%" borderRadius="md" mb={2} startColor="app.surface.subtle" endColor="whiteAlpha.200" />
+        <Box mt="auto" pt={2} display="flex" flexDirection="column" gap={2}>
+          <Skeleton height="3" width="70%" borderRadius="md" startColor="app.surface.subtle" endColor="whiteAlpha.200" />
+          <Skeleton height="3" width="50%" borderRadius="md" startColor="app.surface.subtle" endColor="whiteAlpha.200" />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** 海报图：未加载完成前显示 Skeleton */
+function PosterWithSkeleton({
+  src,
+  alt,
+  ...rest
+}: { src: string; alt: string } & React.ComponentProps<typeof Image>) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <Box position="relative" w="100%" h="100%">
+      <Skeleton
+        position="absolute"
+        inset={0}
+        w="100%"
+        h="100%"
+        startColor="app.surface.subtle"
+        endColor="whiteAlpha.200"
+      />
+      <Image
+        {...rest}
+        src={src}
+        alt={alt}
+        position="absolute"
+        inset={0}
+        w="100%"
+        h="100%"
+        objectFit="cover"
+        opacity={loaded ? 1 : 0}
+        transition="opacity 0.2s ease"
+        onLoad={() => setLoaded(true)}
+        onError={() => setLoaded(true)}
+      />
+    </Box>
+  );
+}
 
 export default function VideoLibPage() {
   const [search, setSearch] = useState("");
@@ -332,16 +390,23 @@ export default function VideoLibPage() {
       )}
 
       {loading ? (
-        <Flex align="center" justify="center" py={10}>
-          <Spinner />
-        </Flex>
+        <SimpleGrid
+          minChildWidth="200px"
+          spacing={4}
+          justifyItems="center"
+          sx={GRID_SX}
+        >
+          {Array.from({ length: 12 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </SimpleGrid>
       ) : (
         <>
           <SimpleGrid
             minChildWidth="200px"
             spacing={4}
             justifyItems="center"
-            sx={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, min(320px, 26vw)))" }}
+            sx={GRID_SX}
           >
             {items.map((item: MediaItem) => {
               const posterUrl = item.poster_url
@@ -351,7 +416,7 @@ export default function VideoLibPage() {
                 <Box
                   key={item.code}
                   w="100%"
-                  maxW="min(320px, 26vw)"
+                  maxW={CARD_MAX_W}
                   borderWidth="1px"
                   borderColor="app.border"
                   borderRadius="md"
@@ -386,14 +451,10 @@ export default function VideoLibPage() {
                     flexShrink={0}
                   >
                     {posterUrl ? (
-                      <Image
+                      <PosterWithSkeleton
                         className="poster-img"
                         src={posterUrl}
                         alt={item.title || item.code}
-                        objectFit="cover"
-                        w="100%"
-                        h="100%"
-                        fallbackSrc=""
                         transition="transform 0.35s ease"
                         sx={{ transformOrigin: "center center" }}
                         onError={(e) => {
@@ -422,32 +483,38 @@ export default function VideoLibPage() {
                     <Heading size="sm" noOfLines={2} mb={1}>
                       {item.title || item.code}
                     </Heading>
-                    <Text
-                      fontSize="xs"
-                      color="app.muted.fg"
-                      noOfLines={1}
-                      overflow="hidden"
-                      textOverflow="ellipsis"
-                      whiteSpace="nowrap"
-                    >
-                      {[item.code, item.actors?.length ? item.actors.join("、") : ""]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </Text>
-                    <Flex mt="auto" pt={2} gap={2} align="center" flexWrap="wrap">
-                      {item.has_video ? (
-                        <Badge colorScheme="green" size="sm">有视频</Badge>
-                      ) : (
-                        <Badge colorScheme="red" size="sm">无视频</Badge>
-                      )}
-                      {item.video_type && (
-                        <Badge variant="outline" size="sm" colorScheme="gray">{item.video_type}</Badge>
-                      )}
-                    </Flex>
+                    <Box mt="auto" pt={2} display="flex" flexDirection="column" gap={1}>
+                      <Text
+                        fontSize="xs"
+                        color="app.muted.fg"
+                        noOfLines={1}
+                        overflow="hidden"
+                        textOverflow="ellipsis"
+                        whiteSpace="nowrap"
+                      >
+                        {[item.code, item.actors?.length ? item.actors.join("、") : ""]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </Text>
+                      <Flex gap={2} align="center" flexWrap="wrap">
+                        {item.has_video ? (
+                          <Badge colorScheme="green" size="sm">有视频</Badge>
+                        ) : (
+                          <Badge colorScheme="red" size="sm">无视频</Badge>
+                        )}
+                        {item.video_type && (
+                          <Badge variant="outline" size="sm" colorScheme="gray">{item.video_type}</Badge>
+                        )}
+                      </Flex>
+                    </Box>
                   </Box>
                 </Box>
               );
             })}
+            {loadingMore &&
+              Array.from({ length: 8 }).map((_, i) => (
+                <CardSkeleton key={`loading-more-${i}`} />
+              ))}
           </SimpleGrid>
 
           <Box ref={sentinelRef} h="1px" w="100%" aria-hidden />
