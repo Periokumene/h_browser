@@ -185,22 +185,30 @@ def list_items():
             ).all():
                 favorited_ids.add(row[0])
 
+        # 为列表项补充演员名称（来自 NFO，用于卡片展示）
+        item_payloads = []
+        for item in items:
+            payload = {
+                "code": item.code,
+                "title": item.title,
+                "video_type": item.video_type,
+                "has_video": bool(item.video_path),
+                "poster_url": f"/api/items/{item.code}/poster",
+                "is_favorite": item.id in favorited_ids,
+            }
+            full = get_item_full_metadata(db, item.code)
+            if full and full.get("nfo_metadata") and full["nfo_metadata"].actors:
+                payload["actors"] = [a.name for a in full["nfo_metadata"].actors]
+            else:
+                payload["actors"] = []
+            item_payloads.append(payload)
+
         return jsonify(
             {
                 "page": page,
                 "page_size": page_size,
                 "total": total,
-                "items": [
-                    {
-                        "code": item.code,
-                        "title": item.title,
-                        "video_type": item.video_type,
-                        "has_video": bool(item.video_path),
-                        "poster_url": f"/api/items/{item.code}/poster",
-                        "is_favorite": item.id in favorited_ids,
-                    }
-                    for item in items
-                ],
+                "items": item_payloads,
             }
         )
     finally:

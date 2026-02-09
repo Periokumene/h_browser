@@ -358,6 +358,8 @@ export default function VideoLibPage() {
                   overflow="hidden"
                   cursor="pointer"
                   bg="app.surface"
+                  display="flex"
+                  flexDirection="column"
                   transition="all 0.28s ease"
                   _hover={{
                     shadow: "xl",
@@ -381,6 +383,7 @@ export default function VideoLibPage() {
                     bg="app.surface.subtle"
                     position="relative"
                     overflow="hidden"
+                    flexShrink={0}
                   >
                     {posterUrl ? (
                       <Image
@@ -409,14 +412,29 @@ export default function VideoLibPage() {
                       </Flex>
                     )}
                   </Box>
-                  <Box p={3}>
+                  <Box
+                    p={3}
+                    flex={1}
+                    display="flex"
+                    flexDirection="column"
+                    minH={0}
+                  >
                     <Heading size="sm" noOfLines={2} mb={1}>
                       {item.title || item.code}
                     </Heading>
-                    <Text fontSize="xs" color="app.muted.fg" noOfLines={1}>
-                      {item.code}
+                    <Text
+                      fontSize="xs"
+                      color="app.muted.fg"
+                      noOfLines={1}
+                      overflow="hidden"
+                      textOverflow="ellipsis"
+                      whiteSpace="nowrap"
+                    >
+                      {[item.code, item.actors?.length ? item.actors.join("、") : ""]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </Text>
-                    <Flex mt={2} gap={2} align="center" flexWrap="wrap">
+                    <Flex mt="auto" pt={2} gap={2} align="center" flexWrap="wrap">
                       {item.has_video ? (
                         <Badge colorScheme="green" size="sm">有视频</Badge>
                       ) : (

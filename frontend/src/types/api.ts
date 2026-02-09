@@ -7,6 +7,7 @@ export interface MediaItem {
   has_video: boolean;
   poster_url?: string;
   is_favorite?: boolean;
+  actors?: string[];
 }
 
 export interface Actor {

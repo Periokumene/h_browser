@@ -19,7 +19,7 @@ import {
   PopoverBody,
 } from "@chakra-ui/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { ListFilters } from "../types/api";
 import { fetchFilters, fetchItem, setItemFavorite, updateItemMetadata } from "../api/calls";
@@ -180,6 +180,14 @@ export default function DetailPage() {
     queryFn: () => fetchItem(code!),
     enabled: !!code,
   });
+
+  useEffect(() => {
+    if (!item) return;
+    document.title = (item as MediaDetail).title || (item as MediaDetail).code || "个人影音库";
+    return () => {
+      document.title = "个人影音库";
+    };
+  }, [item]);
 
   const { data: filterOptions } = useQuery({
     queryKey: ["filters"],

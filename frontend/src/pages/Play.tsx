@@ -18,6 +18,14 @@ export default function PlayPage() {
     enabled: !!code,
   });
 
+  useEffect(() => {
+    if (!item) return;
+    document.title = item.title || item.code || "个人影音库";
+    return () => {
+      document.title = "个人影音库";
+    };
+  }, [item]);
+
   const videoType = item?.video_type ?? null;
 
   const streamUrl = useCallback(() => {
