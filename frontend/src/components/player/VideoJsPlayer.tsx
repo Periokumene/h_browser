@@ -22,6 +22,8 @@ import type { ThumbnailCueCss } from "./spriteThumbnails";
 import { DEFAULT_PLAYER_OPTIONS } from "./constants";
 import { createAndAttachHls } from "./hlsIntegration";
 import { isHlsSource, type VideoJsSource, type VideoJsPlayer, type VideoJsPlayerOptions } from "./types";
+import * as usageApi from "../../api/usage";
+import { getBaseUrl } from "../../api/client";
 
 export type { VideoJsSource };
 
@@ -74,6 +76,11 @@ export default function VideoJsPlayer({
   const spriteThumbnailsInstanceRef = useRef<{
     getThumbnailCssForTime: (time: number) => ThumbnailCueCss | null;
   } | null>(null);
+  const usageSessionIdRef = useRef<number | null>(null);
+  const usageHeartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const usageCodeRef = useRef<string>("");
+  const watchedSecondsRef = useRef(0);
+  const lastHeartbeatPositionRef = useRef<number | null>(null);
 
   const getThumbnailCssForTime = useCallback((time: number): ThumbnailCueCss | null => {
     return spriteThumbnailsInstanceRef.current?.getThumbnailCssForTime?.(time) ?? null;
@@ -246,6 +253,200 @@ export default function VideoJsPlayer({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [playerReady]);
+
+  // 使用行为：进度拉取与续播、会话开始/结束、心跳（单用户）
+  // 心跳间隔：每 10s 上报一次当前播放位置，供后端 play_position_log 做「每部影片内热门片段」统计。
+  // 硬性规则：视频暂停时禁止任何心跳上报（不受节流窗影响）；仅在 player 处于播放中时上报，避免重复标记同一片段。
+  // 若未来遇到高并发/性能问题：可适当调大 HEARTBEAT_INTERVAL_MS 降低请求频率，或在后端加大节流窗以减少写入。
+  const HEARTBEAT_INTERVAL_MS = 10000;
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || player.isDisposed() || !playerReady || !videoCode.trim()) return;
+
+    usageCodeRef.current = videoCode;
+
+    let seekedFromProgress = false;
+    const trySeekToProgress = (positionSeconds: number) => {
+      if (seekedFromProgress) return;
+      const d = player.duration();
+      if (typeof d === "number" && Number.isFinite(d) && d > 0) {
+        player.currentTime(Math.min(positionSeconds, d));
+        seekedFromProgress = true;
+      }
+    };
+
+    const clearHeartbeat = () => {
+      if (usageHeartbeatRef.current != null) {
+        clearInterval(usageHeartbeatRef.current);
+        usageHeartbeatRef.current = null;
+      }
+    };
+
+    const flushSessionAndProgress = (opts?: { useKeepalive?: boolean; markEnded?: boolean }) => {
+      const sid = usageSessionIdRef.current;
+      const code = usageCodeRef.current;
+      const p = playerRef.current;
+      if (sid != null && code && p && !p.isDisposed()) {
+        const pos = p.currentTime() ?? 0;
+        // 尝试补上一段未被心跳覆盖的观看时长（从上次心跳到当前停留点）
+        const lastPos = lastHeartbeatPositionRef.current;
+        const MAX_DELTA = (HEARTBEAT_INTERVAL_MS / 1000) * 3;
+        if (typeof lastPos === "number") {
+          const delta = pos - lastPos;
+          if (delta > 0 && delta < MAX_DELTA) {
+            watchedSecondsRef.current += delta;
+          }
+        }
+        lastHeartbeatPositionRef.current = pos;
+        const watched = watchedSecondsRef.current;
+        if (opts?.markEnded) {
+          // 认为本次会话结束：写入最终观看时长，并刷新 ended_at
+          const payload = { watched_seconds: watched };
+          if (opts?.useKeepalive && typeof fetch === "function") {
+            const base = getBaseUrl();
+            const url = `${base}/api/items/${encodeURIComponent(code)}/play/session/${sid}`;
+            void fetch(url, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+              keepalive: true,
+            }).catch(() => {});
+          } else {
+            usageApi.endSession(code, sid, payload).catch(() => {});
+          }
+        } else {
+          // 会话仍然存活，仅更新累计观看时长
+          if (opts?.useKeepalive && typeof fetch === "function") {
+            const base = getBaseUrl();
+            const url = `${base}/api/items/${encodeURIComponent(code)}/play/session/${sid}/watched`;
+            void fetch(url, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ watched_seconds: watched }),
+              keepalive: true,
+            }).catch(() => {});
+          } else {
+            usageApi.updateSessionWatched(code, sid, watched).catch(() => {});
+          }
+        }
+      }
+      if (code && p && !p.isDisposed()) {
+        const pos = p.currentTime() ?? 0;
+        const dur = p.duration();
+        const progressPayload = {
+          position_seconds: pos,
+          ...(Number.isFinite(dur) && dur != null ? { duration_seconds: dur } : {}),
+        };
+        if (opts?.useKeepalive && typeof fetch === "function") {
+          const base = getBaseUrl();
+          const url = `${base}/api/items/${encodeURIComponent(code)}/progress`;
+          void fetch(url, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(progressPayload),
+            keepalive: true,
+          }).catch(() => {});
+        } else {
+          usageApi.saveProgress(code, progressPayload).catch(() => {});
+        }
+      }
+      clearHeartbeat();
+    };
+
+    void usageApi.getProgress(videoCode).then((progress) => {
+      if (!playerRef.current || playerRef.current.isDisposed() || usageCodeRef.current !== videoCode) return;
+      if (progress && progress.position_seconds > 0) {
+        trySeekToProgress(progress.position_seconds);
+        player.one("loadedmetadata", () => {
+          if (usageCodeRef.current === videoCode && !seekedFromProgress) {
+            trySeekToProgress(progress.position_seconds);
+          }
+        });
+      }
+    });
+
+    const startHeartbeat = () => {
+      clearHeartbeat();
+      usageHeartbeatRef.current = setInterval(() => {
+        const p = playerRef.current;
+        const c = usageCodeRef.current;
+        if (!p || p.isDisposed() || !c) return;
+        // 暂停时一律不上报（即使超出节流窗也不许上报）；若发现已暂停则清除定时器
+        if (p.paused()) {
+          clearHeartbeat();
+          return;
+        }
+        const t = p.currentTime() ?? 0;
+        const lastPos = lastHeartbeatPositionRef.current;
+        const MAX_DELTA = (HEARTBEAT_INTERVAL_MS / 1000) * 3;
+        if (typeof lastPos === "number") {
+          const delta = t - lastPos;
+          if (delta > 0 && delta < MAX_DELTA) {
+            watchedSecondsRef.current += delta;
+          }
+        }
+        lastHeartbeatPositionRef.current = t;
+        // 更新热门片段统计
+        usageApi.sendHeartbeat(c, { position_seconds: t }).catch(() => {});
+        // 刷新当前会话的累计观看时长（非 keepalive）
+        const sid = usageSessionIdRef.current;
+        if (sid != null) {
+          usageApi.updateSessionWatched(c, sid, watchedSecondsRef.current).catch(() => {});
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+    };
+
+    const onPlay = () => {
+      if (usageCodeRef.current !== videoCode) return;
+      const p = playerRef.current;
+      if (!p || p.isDisposed()) return;
+      const hasSession = usageSessionIdRef.current != null;
+      const hasHeartbeat = usageHeartbeatRef.current != null;
+
+      if (!hasSession) {
+        // 首次播放：创建会话并从当前进度开始累计
+        watchedSecondsRef.current = 0;
+        lastHeartbeatPositionRef.current = p.currentTime() ?? 0;
+        void usageApi
+          .startSession(videoCode)
+          .then((res) => {
+            if (usageCodeRef.current !== videoCode) return;
+            usageSessionIdRef.current = res.id;
+            startHeartbeat();
+          })
+          .catch(() => {});
+      } else if (!hasHeartbeat) {
+        // 已有会话但当前无心跳：恢复播放时仅重启心跳，继续累计时长
+        lastHeartbeatPositionRef.current = p.currentTime() ?? 0;
+        startHeartbeat();
+      }
+    };
+
+    const onPause = () => {
+      flushSessionAndProgress();
+    };
+
+    const onEnded = () => {
+      flushSessionAndProgress();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushSessionAndProgress({ useKeepalive: true });
+    };
+
+    player.on("play", onPlay);
+    player.on("pause", onPause);
+    player.on("ended", onEnded);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      player.off("play", onPlay);
+      player.off("pause", onPause);
+      player.off("ended", onEnded);
+      flushSessionAndProgress({ useKeepalive: true, markEnded: true });
+    };
+  }, [playerReady, videoCode]);
 
   /* 缩略图：始终挂载。无 thumbnailsVttUrl 时传 vttContent 空 VTT，有 URL 时传 src；保证插件在任何情况下都会创建 vjs-sprite-thumbnail-display。 */
   useEffect(() => {

@@ -42,6 +42,12 @@ from ..models import (
     TASK_TYPE_GEN_ALL_THUMBNAILS,
     exists_pending_or_running_by_unique_key,
     SubtitlePreference,
+    get_playback_progress,
+    upsert_playback_progress,
+    create_play_session,
+    end_play_session,
+    update_play_session_watched,
+    append_play_position_log,
 )
 from ..services.actor_images import find_existing_avatar
 from ..services.ffprobe import get_duration as ffprobe_get_duration
@@ -736,6 +742,122 @@ def delete_bookmark(code: str, bookmark_id: str):
         db.delete(b)
         db.commit()
     return jsonify({"ok": True}), 200
+
+
+# ---------------------------------------------------------------------------
+# 播放进度与会话 API（usage.db，单用户）
+# ---------------------------------------------------------------------------
+
+
+@api_bp.route("/items/<string:code>/progress", methods=["GET"])
+def get_item_progress(code: str):
+    """获取该片的播放进度，用于「继续上一次的播放」。不存在则 404。"""
+    with session_scope_usage() as db:
+        progress = get_playback_progress(db, code)
+    if progress is None:
+        return jsonify({"error": "无播放进度"}), 404
+    return jsonify(progress)
+
+
+@api_bp.route("/items/<string:code>/progress", methods=["PUT"])
+def put_item_progress(code: str):
+    """保存播放进度。请求体: { "position_seconds": number, "duration_seconds"?: number }。"""
+    data = request.get_json(silent=True) or {}
+    position_seconds = data.get("position_seconds")
+    if position_seconds is None:
+        return jsonify({"error": "缺少 position_seconds"}), 400
+    try:
+        position_seconds = float(position_seconds)
+    except (TypeError, ValueError):
+        return jsonify({"error": "position_seconds 须为数字"}), 400
+    duration_seconds = data.get("duration_seconds")
+    if duration_seconds is not None:
+        try:
+            duration_seconds = float(duration_seconds)
+        except (TypeError, ValueError):
+            duration_seconds = None
+    with session_scope_usage() as db:
+        progress = upsert_playback_progress(db, code, position_seconds, duration_seconds)
+        db.commit()
+    return jsonify(progress)
+
+
+@api_bp.route("/items/<string:code>/play/session", methods=["POST"])
+def start_play_session(code: str):
+    """开始一次播放会话。请求体可为空。返回 session_id。
+
+    会话的真实观看时长（秒）由前端在心跳与结束时通过 /play/session/<id>/watched 与 PATCH /play/session/<id> 写回。
+    """
+    with session_scope_usage() as db:
+        out = create_play_session(db, code)
+        db.commit()
+    return jsonify(out), 201
+
+
+@api_bp.route("/items/<string:code>/play/session/<int:session_id>", methods=["PATCH"])
+def end_play_session_route(code: str, session_id: int):
+    """结束指定播放会话。
+
+    请求体: { "watched_seconds"?: number }。
+    - watched_seconds: 本次会话最终累计观看时长（秒），由前端根据播放过程累加；若缺省则仅更新时间。
+    """
+    data = request.get_json(silent=True) or {}
+    watched_seconds = data.get("watched_seconds")
+    if watched_seconds is not None:
+        try:
+            watched_seconds = float(watched_seconds)
+        except (TypeError, ValueError):
+            watched_seconds = None
+    with session_scope_usage() as db:
+        ok = end_play_session(db, session_id, code, watched_seconds)
+        db.commit()
+    if not ok:
+        return jsonify({"error": "未找到该会话"}), 404
+    return jsonify({"ok": True}), 200
+
+
+@api_bp.route("/items/<string:code>/play/session/<int:session_id>/watched", methods=["PATCH"])
+def update_play_session_watched_route(code: str, session_id: int):
+    """更新指定播放会话的累计观看时长。请求体: { "watched_seconds": number }。
+
+    设计为幂等接口：watched_seconds 为前端维护的「当前累计值」，服务器直接覆盖。
+    心跳（播放中每 10s 一次）应调用本接口，从而将「真实观看时长」的损失控制在一个心跳周期内。
+    """
+    data = request.get_json(silent=True) or {}
+    watched_seconds = data.get("watched_seconds")
+    if watched_seconds is None:
+        return jsonify({"error": "缺少 watched_seconds"}), 400
+    try:
+        watched_seconds = float(watched_seconds)
+    except (TypeError, ValueError):
+        return jsonify({"error": "watched_seconds 须为数字"}), 400
+    with session_scope_usage() as db:
+        ok = update_play_session_watched(db, session_id, code, watched_seconds)
+        db.commit()
+    if not ok:
+        return jsonify({"error": "未找到该会话"}), 404
+    return jsonify({"ok": True}), 200
+
+
+@api_bp.route("/items/<string:code>/play/heartbeat", methods=["POST"])
+def play_heartbeat(code: str):
+    """上报当前播放位置（心跳），用于热门片段统计。请求体: { "position_seconds": number }。
+
+    约定：仅当视频正在播放时上报；暂停期间前端不得请求本接口（由前端保证）。
+    服务端对同片同 60 秒片段在节流窗内去重，见 append_play_position_log 的 throttle_seconds。
+    """
+    data = request.get_json(silent=True) or {}
+    position_seconds = data.get("position_seconds")
+    if position_seconds is None:
+        return jsonify({"error": "缺少 position_seconds"}), 400
+    try:
+        position_seconds = float(position_seconds)
+    except (TypeError, ValueError):
+        return jsonify({"error": "position_seconds 须为数字"}), 400
+    with session_scope_usage() as db:
+        append_play_position_log(db, code, position_seconds)
+        db.commit()
+    return "", 204
 
 
 @api_bp.route("/items/<string:code>/poster", methods=["GET"])

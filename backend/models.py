@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Generator, Optional
 
 from sqlalchemy import (
@@ -18,12 +19,14 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
     Text,
     create_engine,
     func,
+    text,
 )
 from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
@@ -240,6 +243,47 @@ class Task(UsageBase, TimestampMixin):
 
     def set_payload(self, data: dict) -> None:
         self.payload = json.dumps(data, ensure_ascii=False) if data else None
+
+
+class PlaybackProgress(UsageBase):
+    """播放进度（usage.db）：单用户下每部影片一条，用于「继续上一次的播放」。"""
+
+    __tablename__ = "playback_progress"
+
+    code = Column(String(255), primary_key=True, nullable=False)
+    position_seconds = Column(Float, nullable=False)
+    duration_seconds = Column(Float, nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class PlaySession(UsageBase):
+    """播放会话（usage.db）：每次播放一条，用于使用时间分布、每部影片统计、猜你喜欢。
+
+    - started_at / ended_at: 本次 Play 页生命周期的开始与最后一次上报时间（真实世界时间）
+    - duration_video_seconds: 本次会话的「累计观看时长」（秒），由前端在心跳与结束时持续写回
+
+    不再记录片内起止位置，真实观看片段由 play_position_log 提供。
+    """
+
+    __tablename__ = "play_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(255), nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    ended_at = Column(DateTime(timezone=True), nullable=True)
+    duration_video_seconds = Column(Float, nullable=True)
+
+
+class PlayPositionLog(UsageBase):
+    """播放位置心跳（usage.db）：定时上报的播放位置，用于每部影片内热门片段汇总。"""
+
+    __tablename__ = "play_position_log"
+    __table_args__ = (Index("ix_play_position_log_code_created", "code", "created_at"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(255), nullable=False, index=True)
+    position_seconds = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 # ---------------------------------------------------------------------------
@@ -488,3 +532,163 @@ def get_task(session: Session, task_id: str) -> Optional[dict]:
 def cancel_task(session: Session, task_id: str) -> bool:
     """将任务标记为 cancelled。返回是否找到并更新。仅改状态，实际终止与清理由协调器/worker 负责。"""
     return update_task_progress(session, task_id, status=TASK_STATUS_CANCELLED)
+
+
+# ---------------------------------------------------------------------------
+# 播放进度与会话 CRUD（usage.db，单用户）
+# ---------------------------------------------------------------------------
+
+
+def get_playback_progress(session: Session, code: str) -> Optional[dict]:
+    """按 code 查询播放进度，不存在返回 None。"""
+    row = session.query(PlaybackProgress).filter(PlaybackProgress.code == code).first()
+    if not row:
+        return None
+    return {
+        "code": row.code,
+        "position_seconds": row.position_seconds,
+        "duration_seconds": row.duration_seconds,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def upsert_playback_progress(
+    session: Session,
+    code: str,
+    position_seconds: float,
+    duration_seconds: Optional[float] = None,
+) -> dict:
+    """写入或更新播放进度，返回当前记录。"""
+    row = session.query(PlaybackProgress).filter(PlaybackProgress.code == code).first()
+    if row:
+        row.position_seconds = position_seconds
+        if duration_seconds is not None:
+            row.duration_seconds = duration_seconds
+    else:
+        row = PlaybackProgress(
+            code=code,
+            position_seconds=position_seconds,
+            duration_seconds=duration_seconds,
+        )
+        session.add(row)
+    return {
+        "code": row.code,
+        "position_seconds": row.position_seconds,
+        "duration_seconds": row.duration_seconds,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def create_play_session(
+    session: Session,
+    code: str,
+) -> dict:
+    """创建一条播放会话（开始），返回含 id 的 dict。
+
+    注意：累计观看时长由前端在心跳与结束会话时写回 duration_video_seconds。
+    """
+    ps = PlaySession(code=code)
+    session.add(ps)
+    session.flush()
+    return {
+        "id": ps.id,
+        "code": ps.code,
+        "started_at": ps.started_at.isoformat() if ps.started_at else None,
+    }
+
+
+def end_play_session(
+    session: Session,
+    session_id: int,
+    code: str,
+    watched_seconds: Optional[float] = None,
+) -> bool:
+    """结束指定会话，写入结束时间与最终累计观看时长。返回是否找到并更新。
+
+    仅在「认为本次会话彻底结束」时调用，例如离开播放页或关闭浏览器。
+    日常播放过程中的观看时长更新应使用 update_play_session_watched。
+    """
+    ps = session.query(PlaySession).filter(
+        PlaySession.id == session_id,
+        PlaySession.code == code,
+    ).first()
+    if not ps:
+        return False
+    ps.ended_at = datetime.now(timezone.utc)
+    if watched_seconds is not None:
+        ps.duration_video_seconds = watched_seconds
+    return True
+
+
+def update_play_session_watched(
+    session: Session,
+    session_id: int,
+    code: str,
+    watched_seconds: float,
+) -> bool:
+    """仅更新指定会话的累计观看时长（秒），并刷新 ended_at。
+
+    设计为幂等：watched_seconds 由前端维护为「当前累计值」，服务器直接覆盖。
+    """
+    ps = session.query(PlaySession).filter(
+        PlaySession.id == session_id,
+        PlaySession.code == code,
+    ).first()
+    if not ps:
+        return False
+    ps.duration_video_seconds = watched_seconds
+    # 每次上报会话信息都视为「最后活跃时间」，用于后续统计/排序
+    ps.ended_at = datetime.now(timezone.utc)
+    return True
+
+
+def _recent_same_segment_log(
+    session: Session,
+    code: str,
+    position_seconds: float,
+    within_seconds: float = 30,
+) -> bool:
+    """同一 code 在 within_seconds 内是否已有同一 60 秒片段的记录。
+
+    用于服务端节流：在时间窗内同片段只保留一条，避免异常/重复请求导致重复标记。
+    注意：暂停期间禁止上报由前端保证；本处仅做写入去重。若遇高并发/性能问题，
+    可适当增大 within_seconds 减少写入频率，或配合前端加大心跳间隔。
+    """
+    from sqlalchemy import and_
+    segment = int(position_seconds // 60)
+    seg_start = float(segment * 60)
+    seg_end = seg_start + 60
+    # SQLite: datetime('now', '-N seconds')
+    modifier = f"-{int(within_seconds)} seconds"
+    q = (
+        session.query(PlayPositionLog.id)
+        .filter(
+            and_(
+                PlayPositionLog.code == code,
+                PlayPositionLog.position_seconds >= seg_start,
+                PlayPositionLog.position_seconds < seg_end,
+                PlayPositionLog.created_at >= text("datetime('now', :mod)").bindparams(mod=modifier),
+            )
+        )
+        .limit(1)
+    )
+    return q.first() is not None
+
+
+def append_play_position_log(
+    session: Session,
+    code: str,
+    position_seconds: float,
+    *,
+    throttle_seconds: float = 30,
+) -> bool:
+    """追加一条播放位置心跳（用于每部影片内热门片段统计）。
+
+    节流规则：同一 code、同一 60 秒片段、在 throttle_seconds 秒内已有记录则跳过写入，
+    返回 False；否则写入并返回 True。暂停期间不得上报由前端保证，此处仅做服务端去重。
+    若遇高并发/性能问题：可增大 throttle_seconds 或由路由层做限流。
+    """
+    if throttle_seconds > 0 and _recent_same_segment_log(session, code, position_seconds, throttle_seconds):
+        return False
+    session.add(PlayPositionLog(code=code, position_seconds=position_seconds))
+    return True
