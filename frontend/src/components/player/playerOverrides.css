@@ -32,12 +32,12 @@
  * 仅调整颜色 / 边框 / 阴影，不改变高度、布局与内边距，避免破坏插件布局。
  * ========================= */
 
-.vjs-theme-newvideolib.video-js {
+.vjs-theme-zako-media.video-js {
   color: #e5e7eb; /* 文本默认浅灰，与深色背景对比 */
 }
 
 /* 控制栏整体背景、边框与阴影 */
-.vjs-theme-newvideolib.video-js .vjs-control-bar {
+.vjs-theme-zako-media.video-js .vjs-control-bar {
   /* 先清掉 video.js 默认的纯色背景 / 白色边框 */
   background-color: transparent;
   border: 0;
@@ -52,34 +52,34 @@
 }
 
 /* 普通状态的按钮（播放、音量、全屏等） */
-.vjs-theme-newvideolib.video-js .vjs-control {
+.vjs-theme-zako-media.video-js .vjs-control {
   color: #e5e7eb;
   text-shadow: none;
 }
 
 /* 悬停与激活时的高亮，使用项目中常用的暖色系高亮 */
-.vjs-theme-newvideolib.video-js .vjs-control:hover,
-.vjs-theme-newvideolib.video-js .vjs-control.vjs-control-active {
+.vjs-theme-zako-media.video-js .vjs-control:hover,
+.vjs-theme-zako-media.video-js .vjs-control.vjs-control-active {
   color: #f97316;
   text-shadow: 0 0 12px rgba(249, 115, 22, 0.7);
 }
 
 /* 时间文本与当前播放时间 */
-.vjs-theme-newvideolib.video-js .vjs-time-control {
+.vjs-theme-zako-media.video-js .vjs-time-control {
   color: #e5e7eb;
 }
 
 /* 进度条背景与缓冲、已播放进度 */
-.vjs-theme-newvideolib.video-js .vjs-progress-holder {
+.vjs-theme-zako-media.video-js .vjs-progress-holder {
   background-color: rgba(30, 41, 59, 0.95);
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.9);
 }
 
-.vjs-theme-newvideolib.video-js .vjs-load-progress {
+.vjs-theme-zako-media.video-js .vjs-load-progress {
   background-color: rgba(148, 163, 184, 0.65);
 }
 
-.vjs-theme-newvideolib.video-js .vjs-play-progress {
+.vjs-theme-zako-media.video-js .vjs-play-progress {
   /* 使用比大橙色更柔和的暖色，贴合 theme 中的 orange.400/500 风格 */
   background-color: #fb923c; /* 接近 orange.400 */
   box-shadow:
@@ -88,51 +88,51 @@
 }
 
 /* 音量条：灰色底 + 橙色已用音量部分 */
-.vjs-theme-newvideolib.video-js .vjs-volume-bar {
+.vjs-theme-zako-media.video-js .vjs-volume-bar {
   background-color: rgba(30, 41, 59, 0.95);
 }
 
-.vjs-theme-newvideolib.video-js .vjs-volume-level {
+.vjs-theme-zako-media.video-js .vjs-volume-level {
   background-color: #f97316;
   box-shadow: 0 0 10px rgba(249, 115, 22, 0.7);
 }
 
 /* 媒体类型图标、播放图标等 icon 的默认颜色 */
-.vjs-theme-newvideolib.video-js .vjs-icon-placeholder:before {
+.vjs-theme-zako-media.video-js .vjs-icon-placeholder:before {
   color: inherit;
 }
 
 /* 隐藏字幕按钮：根据官方推荐，使用组件类名隐藏更稳妥，
  * 不去改 controlBar 结构，避免影响其它插件/按钮的默认布局。
  */
-.vjs-theme-newvideolib.video-js .vjs-subs-caps-button,
-.vjs-theme-newvideolib.video-js .vjs-subtitles-button,
-.vjs-theme-newvideolib.video-js .vjs-captions-button {
+.vjs-theme-zako-media.video-js .vjs-subs-caps-button,
+.vjs-theme-zako-media.video-js .vjs-subtitles-button,
+.vjs-theme-zako-media.video-js .vjs-captions-button {
   display: none !important;
 }
 
 /* 菜单（倍速、字幕等）背景与选中态 */
-.vjs-theme-newvideolib.video-js .vjs-menu {
+.vjs-theme-zako-media.video-js .vjs-menu {
   background-color: rgba(15, 23, 42, 0.98);
   border-radius: 0.5rem;
   border: 1px solid rgba(148, 163, 184, 0.7);
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.95);
 }
 
-.vjs-theme-newvideolib.video-js .vjs-menu .vjs-menu-item {
+.vjs-theme-zako-media.video-js .vjs-menu .vjs-menu-item {
   color: #e5e7eb;
 }
 
-.vjs-theme-newvideolib.video-js .vjs-menu .vjs-menu-item.vjs-selected {
+.vjs-theme-zako-media.video-js .vjs-menu .vjs-menu-item.vjs-selected {
   color: #f97316;
 }
 
-.vjs-theme-newvideolib.video-js .vjs-menu .vjs-menu-item:hover {
+.vjs-theme-zako-media.video-js .vjs-menu .vjs-menu-item:hover {
   background-color: rgba(30, 64, 175, 0.24);
 }
 
 /* 大播放按钮：与控制栏保持一致的暖色高亮 */
-.vjs-theme-newvideolib.video-js .vjs-big-play-button {
+.vjs-theme-zako-media.video-js .vjs-big-play-button {
   border-color: rgba(148, 163, 184, 0.9);
   color: #e5e7eb;
   background: radial-gradient(circle at 30% 30%, rgba(249, 250, 251, 0.1), rgba(15, 23, 42, 0.96));
@@ -141,7 +141,7 @@
     0 0 0 1px rgba(15, 23, 42, 0.9);
 }
 
-.vjs-theme-newvideolib.video-js .vjs-big-play-button:hover {
+.vjs-theme-zako-media.video-js .vjs-big-play-button:hover {
   border-color: #f97316;
   color: #f97316;
   box-shadow:
@@ -153,11 +153,11 @@
  * - 去掉 video.js 根元素获得焦点时的粗白色轮廓
  * - 保留控件级别的 focus，可根据需要再定制更精细的视觉效果
  */
-.vjs-theme-newvideolib.video-js:focus {
+.vjs-theme-zako-media.video-js:focus {
   outline: none;
 }
 
-.vjs-theme-newvideolib.video-js .vjs-control:focus-visible {
+.vjs-theme-zako-media.video-js .vjs-control:focus-visible {
   outline: 2px solid #f97316; /* 柔和一点的高亮色，可按需调整 */
   outline-offset: 2px;
 }

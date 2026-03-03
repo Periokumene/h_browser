@@ -90,7 +90,7 @@ export default function VideoJsPlayer({
     const useHls = isHlsSource(sources);
     const videoEl = document.createElement("video-js");
     // 使用自定义主题类，按 Video.js 官方推荐方式做 UI 主题覆盖
-    videoEl.classList.add("vjs-big-play-centered", "vjs-theme-newvideolib");
+    videoEl.classList.add("vjs-big-play-centered", "vjs-theme-zako-media");
     containerRef.current.appendChild(videoEl);
 
     const opts: VideoJsPlayerOptions = {
